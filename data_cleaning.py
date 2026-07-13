@@ -54,6 +54,7 @@ def get_site_links(sitemap_url):
 
         except Exception as e:
             #print(f"Skipping {url}: {e}", flush=True)
+            continue
 
     context_dir = Path("context")
     context_dir.mkdir(exist_ok=True)
