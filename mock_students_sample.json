@@ -1,0 +1,266 @@
+{
+  "_meta": {
+    "purpose": "Synthetic sample data for building/testing the GradMap AI Context Builder. Fully fabricated — no real students. Safe to commit to the gradmap-ai repo.",
+    "generated_for": "Deren (AI track)",
+    "as_of_date": "2026-07-07",
+    "notes": "Shape mirrors the Context Builder snapshot in the Architecture & Internship Plan. IDs are opaque; no names/emails/PII. Replace with a live staging export once read-only DB access is set up.",
+    "field_guide": {
+      "grade_level": "rising grade for 2026-27 school year (9-12)",
+      "gpa_band": "banded, not exact (e.g. '3.5-3.7')",
+      "task.status": "not_started | in_progress | done",
+      "task.last_touched": "ISO date or null if never opened",
+      "school.deadline_type": "ED | EA | RD | UC_priority | rolling | CSU",
+      "essay.pct_complete": "0-100",
+      "risk_signals": "derived flags the recommender should be able to reproduce"
+    }
+  },
+  "students": [
+    {
+      "student_id": "stu_0001",
+      "grade_level": 12,
+      "gpa_band": "3.8-4.0",
+      "interests": ["biology", "research", "debate"],
+      "scenario": "On-track high achiever. Should get light, forward-looking nudges.",
+      "active_tasks": [
+        {"task": "Finalize college list", "category": "college_list", "status": "in_progress", "due_date": "2026-08-15", "last_touched": "2026-07-05"},
+        {"task": "Draft Common App personal statement", "category": "essays", "status": "in_progress", "due_date": "2026-09-15", "last_touched": "2026-07-06"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "UC Berkeley", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "Stanford University", "deadline_type": "EA", "deadline": "2026-11-01"},
+        {"name": "UC Davis", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "Cal Poly San Luis Obispo", "deadline_type": "rolling", "deadline": "2026-11-30"}
+      ],
+      "activities": [
+        {"name": "Science Olympiad", "role": "Captain", "hours_per_week": 6},
+        {"name": "Hospital volunteering", "role": "Volunteer", "hours_per_week": 4}
+      ],
+      "essays": [
+        {"prompt": "Common App personal statement", "status": "in_progress", "pct_complete": 40, "last_touched": "2026-07-06"}
+      ],
+      "recent_activity": [
+        {"completed": "Added UC Davis to list", "date": "2026-07-05"}
+      ],
+      "risk_signals": []
+    },
+    {
+      "student_id": "stu_0002",
+      "grade_level": 12,
+      "gpa_band": "3.5-3.7",
+      "interests": ["english", "journalism"],
+      "scenario": "Behind on a high-stakes essay (the mockup example). Draft stalled 60%, untouched 9 days, deadline < 5 months. Should trigger a strong nudge.",
+      "active_tasks": [
+        {"task": "Finish UC Personal Insight Question #1", "category": "essays", "status": "in_progress", "due_date": "2026-11-30", "last_touched": "2026-06-28"},
+        {"task": "Request counselor recommendation", "category": "recommendations", "status": "not_started", "due_date": "2026-10-01", "last_touched": null}
+      ],
+      "overdue_tasks": [
+        {"task": "Add 2 more safety schools", "category": "college_list", "due_date": "2026-06-30", "last_touched": null}
+      ],
+      "school_list": [
+        {"name": "UCLA", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "UC Berkeley", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "USC", "deadline_type": "EA", "deadline": "2026-11-01"}
+      ],
+      "activities": [
+        {"name": "School newspaper", "role": "Editor", "hours_per_week": 5}
+      ],
+      "essays": [
+        {"prompt": "UC PIQ #1 (leadership)", "status": "in_progress", "pct_complete": 60, "last_touched": "2026-06-28"}
+      ],
+      "recent_activity": [],
+      "risk_signals": ["essay_stalled_9_days", "deadline_within_150_days_low_progress", "list_light_on_safeties"]
+    },
+    {
+      "student_id": "stu_0003",
+      "grade_level": 12,
+      "gpa_band": "3.2-3.4",
+      "interests": ["business", "basketball"],
+      "scenario": "Student-athlete, time-constrained, several overdue items. Should get prioritized, realistic nudges.",
+      "active_tasks": [
+        {"task": "Register for October SAT", "category": "testing", "status": "not_started", "due_date": "2026-09-05", "last_touched": null}
+      ],
+      "overdue_tasks": [
+        {"task": "Start Common App account", "category": "applications", "due_date": "2026-06-15", "last_touched": null},
+        {"task": "Draft activities list", "category": "activities", "due_date": "2026-06-25", "last_touched": "2026-06-10"}
+      ],
+      "school_list": [
+        {"name": "Arizona State University", "deadline_type": "rolling", "deadline": "2027-02-01"},
+        {"name": "San Diego State University", "deadline_type": "CSU", "deadline": "2026-11-30"}
+      ],
+      "activities": [
+        {"name": "Varsity basketball", "role": "Player", "hours_per_week": 15}
+      ],
+      "essays": [],
+      "recent_activity": [],
+      "risk_signals": ["multiple_overdue_tasks", "no_essays_started", "high_activity_time_load"]
+    },
+    {
+      "student_id": "stu_0004",
+      "grade_level": 11,
+      "gpa_band": "3.6-3.8",
+      "interests": ["computer science", "robotics"],
+      "scenario": "Rising junior, early stage. Should get exploration/foundation nudges, not application-deadline pressure.",
+      "active_tasks": [
+        {"task": "Research 5-10 colleges informally", "category": "college_list", "status": "in_progress", "due_date": "2026-12-01", "last_touched": "2026-07-01"},
+        {"task": "Plan a summer activity for 2027", "category": "activities", "status": "not_started", "due_date": "2027-02-01", "last_touched": null}
+      ],
+      "overdue_tasks": [],
+      "school_list": [],
+      "activities": [
+        {"name": "FIRST Robotics", "role": "Member", "hours_per_week": 5}
+      ],
+      "essays": [],
+      "recent_activity": [
+        {"completed": "Saved 3 colleges to explore", "date": "2026-07-01"}
+      ],
+      "risk_signals": ["college_list_empty"]
+    },
+    {
+      "student_id": "stu_0005",
+      "grade_level": 12,
+      "gpa_band": "3.9-4.0",
+      "interests": ["engineering", "math"],
+      "scenario": "Strong applicant but recommendation not yet requested and deadlines approaching. Tests the 'nudge the missing dependency' case.",
+      "active_tasks": [
+        {"task": "Request 2 teacher recommendations", "category": "recommendations", "status": "not_started", "due_date": "2026-09-15", "last_touched": null},
+        {"task": "Complete UC application", "category": "applications", "status": "in_progress", "due_date": "2026-11-30", "last_touched": "2026-07-03"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "Georgia Institute of Technology", "deadline_type": "EA", "deadline": "2026-10-15"},
+        {"name": "UC San Diego", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "Purdue University", "deadline_type": "rolling", "deadline": "2026-11-01"}
+      ],
+      "activities": [
+        {"name": "Math club", "role": "President", "hours_per_week": 3}
+      ],
+      "essays": [
+        {"prompt": "Common App personal statement", "status": "in_progress", "pct_complete": 75, "last_touched": "2026-07-04"}
+      ],
+      "recent_activity": [
+        {"completed": "Completed UC academic history", "date": "2026-07-03"}
+      ],
+      "risk_signals": ["recommendation_not_requested_with_ea_deadline"]
+    },
+    {
+      "student_id": "stu_0006",
+      "grade_level": 10,
+      "gpa_band": "3.0-3.2",
+      "interests": ["art", "music"],
+      "scenario": "Rising sophomore, minimal engagement. Recommender should keep it light and habit-building.",
+      "active_tasks": [
+        {"task": "Log activities and hours", "category": "activities", "status": "not_started", "due_date": "2026-12-01", "last_touched": null}
+      ],
+      "overdue_tasks": [],
+      "school_list": [],
+      "activities": [],
+      "essays": [],
+      "recent_activity": [],
+      "risk_signals": ["low_engagement", "no_activities_logged"]
+    },
+    {
+      "student_id": "stu_0007",
+      "grade_level": 12,
+      "gpa_band": "3.4-3.6",
+      "interests": ["nursing", "spanish"],
+      "scenario": "First-gen, financial-aid heavy. Should surface FAFSA/CSS tasks alongside apps.",
+      "active_tasks": [
+        {"task": "Complete FAFSA", "category": "financial_aid", "status": "not_started", "due_date": "2026-10-01", "last_touched": null},
+        {"task": "Gather parent tax documents", "category": "financial_aid", "status": "in_progress", "due_date": "2026-09-15", "last_touched": "2026-07-02"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "CSU Fullerton", "deadline_type": "CSU", "deadline": "2026-11-30"},
+        {"name": "CSU Long Beach", "deadline_type": "CSU", "deadline": "2026-11-30"}
+      ],
+      "activities": [
+        {"name": "Red Cross Club", "role": "Member", "hours_per_week": 3}
+      ],
+      "essays": [],
+      "recent_activity": [
+        {"completed": "Started tax document checklist", "date": "2026-07-02"}
+      ],
+      "risk_signals": ["financial_aid_deadline_approaching", "no_essays_started"]
+    },
+    {
+      "student_id": "stu_0008",
+      "grade_level": 12,
+      "gpa_band": "3.7-3.9",
+      "interests": ["political science", "law"],
+      "scenario": "Over-ambitious list, zero safety schools. Tests the 'balance the list' recommendation.",
+      "active_tasks": [
+        {"task": "Draft Common App personal statement", "category": "essays", "status": "in_progress", "due_date": "2026-09-15", "last_touched": "2026-07-06"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "Harvard University", "deadline_type": "EA", "deadline": "2026-11-01"},
+        {"name": "Yale University", "deadline_type": "EA", "deadline": "2026-11-01"},
+        {"name": "Princeton University", "deadline_type": "EA", "deadline": "2026-11-01"},
+        {"name": "Columbia University", "deadline_type": "ED", "deadline": "2026-11-01"}
+      ],
+      "activities": [
+        {"name": "Model UN", "role": "Secretary-General", "hours_per_week": 6},
+        {"name": "Mock Trial", "role": "Captain", "hours_per_week": 4}
+      ],
+      "essays": [
+        {"prompt": "Common App personal statement", "status": "in_progress", "pct_complete": 50, "last_touched": "2026-07-06"}
+      ],
+      "recent_activity": [
+        {"completed": "Added Columbia (ED) to list", "date": "2026-07-06"}
+      ],
+      "risk_signals": ["list_all_reach_no_safety", "multiple_ed_ea_conflict"]
+    },
+    {
+      "student_id": "stu_0009",
+      "grade_level": 11,
+      "gpa_band": "2.8-3.0",
+      "interests": ["automotive", "trades"],
+      "scenario": "Rising junior exploring CC and CSU paths. Tests non-elite, community-college-aware recommendations.",
+      "active_tasks": [
+        {"task": "Explore community college transfer paths", "category": "college_list", "status": "in_progress", "due_date": "2026-12-15", "last_touched": "2026-07-04"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "Santa Ana College", "deadline_type": "rolling", "deadline": "2027-07-29"}
+      ],
+      "activities": [
+        {"name": "Part-time job (auto shop)", "role": "Employee", "hours_per_week": 12}
+      ],
+      "essays": [],
+      "recent_activity": [
+        {"completed": "Explored transfer requirements", "date": "2026-07-04"}
+      ],
+      "risk_signals": []
+    },
+    {
+      "student_id": "stu_0010",
+      "grade_level": 12,
+      "gpa_band": "3.6-3.8",
+      "interests": ["environmental science", "hiking"],
+      "scenario": "Well-balanced senior, mostly on track with one near-term testing gap. Tests the 'quiet week, one small nudge' case.",
+      "active_tasks": [
+        {"task": "Send SAT scores to UCs", "category": "testing", "status": "not_started", "due_date": "2026-11-15", "last_touched": null},
+        {"task": "Draft UC PIQ #2", "category": "essays", "status": "in_progress", "due_date": "2026-11-30", "last_touched": "2026-07-05"}
+      ],
+      "overdue_tasks": [],
+      "school_list": [
+        {"name": "UC Santa Barbara", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "UC Santa Cruz", "deadline_type": "UC_priority", "deadline": "2026-11-30"},
+        {"name": "Oregon State University", "deadline_type": "rolling", "deadline": "2026-11-01"},
+        {"name": "Cal Poly Humboldt", "deadline_type": "rolling", "deadline": "2026-11-30"}
+      ],
+      "activities": [
+        {"name": "Environmental club", "role": "Member", "hours_per_week": 3},
+        {"name": "Trail restoration volunteering", "role": "Volunteer", "hours_per_week": 3}
+      ],
+      "essays": [
+        {"prompt": "UC PIQ #2 (community)", "status": "in_progress", "pct_complete": 30, "last_touched": "2026-07-05"}
+      ],
+      "recent_activity": [
+        {"completed": "Drafted opening of PIQ #2", "date": "2026-07-05"}
+      ],
+      "risk_signals": []
+    }
+  ]
+}
