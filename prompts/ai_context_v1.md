@@ -9,8 +9,6 @@ Given a student's snapshot of context, generate personalized and actionable reco
 - You will recieve a set of articles that will serve as a source of truth providing accurate and relevant information to help assist with context around a certain task.
 - You will receive a list of triggers with dates — specific events or deadlines the student must complete by a given date.
 
-
-
 # Instructions
 - Identify at least 5 but no more than 10 recommendations that are most relevant to the student from the following tags: essay planning, course planning, major, financial aid, upcoming evenets, and letter of recommendations.
 - Rank recommendations by urgency first, then importance for helping the student complete required work.
