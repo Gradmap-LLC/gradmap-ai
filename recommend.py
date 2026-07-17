@@ -34,7 +34,7 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 
-def recomendations(student_snapshot, context="context/gradmap_context.json", triggers="context/triggers.json"):
+def recommendations(student_snapshot, context="context/gradmap_context.json", triggers="context/triggers.json"):
     context_data = _load_json(context)
     triggers_data = _load_json(triggers)
     context_text = _format_context_articles(context_data)
