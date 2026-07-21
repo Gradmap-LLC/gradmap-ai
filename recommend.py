@@ -45,6 +45,7 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", tr
     response = client.messages.create(
         model="claude-haiku-4-5",
         max_tokens=2000,
+        cache_control={"type": "ephemeral"},
         system=system_prompt,
         messages=[{
             "role": "user",

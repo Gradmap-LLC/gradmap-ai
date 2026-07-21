@@ -9,18 +9,18 @@ from recommend import recommendations
 
 DB_CONFIG = {
     "student": {
-    "host": os.environ.get("GM_DB_HOST", "3.14.196.144"),
-    "port": int(os.environ.get("GM_DB_PORT", "5432")),
-    "user": os.environ.get("GM_DB_USER", "deren_readonly"),
-    "password": os.environ.get("GM_DB_PASSWORD", "derenreadonly@3sd1"),
-    "dbname": os.environ.get("GM_DB_NAME", "student"),
+    "host": os.environ["GM_DB_HOST"],
+    "port": int(os.environ["GM_DB_PORT"]),
+    "user": os.environ["GM_DB_USER"],
+    "password": os.environ["GM_DB_PASSWORD"],
+    "dbname": os.environ["GM_DB_STUDENT_NAME"],
     },
     "gm_schools": {
-    "host": os.environ.get("GM_DB_HOST", "3.14.196.144"),
-    "port": int(os.environ.get("GM_DB_PORT", "5432")),
-    "user": os.environ.get("GM_DB_USER", "deren_readonly"),
-    "password": os.environ.get("GM_DB_PASSWORD", "derenreadonly@3sd1"),
-    "dbname": os.environ.get("GM_DB_NAME", "gm_schools"),
+    "host": os.environ["GM_DB_HOST"],
+    "port": int(os.environ["GM_DB_PORT"]),
+    "user": os.environ["GM_DB_USER"],
+    "password": os.environ["GM_DB_PASSWORD"],
+    "dbname": os.environ["GM_DB_SCHOOLS_NAME"],
     }
 
 }
