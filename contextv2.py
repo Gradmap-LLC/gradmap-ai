@@ -87,8 +87,8 @@ def _row_to_snapshot(row):
         "program_id": row["id"],
         "personal_information": {
             "year_finish_high_school": row["year_finish_high_school"],
-            "first_name": row["first_name"],
-            "last_name": row["last_name"],
+            #"first_name": row["first_name"],
+            #"last_name": row["last_name"],
         },
         "act_test": {
             "is_have_act_score_report": row["is_have_act_score_report"],
@@ -163,8 +163,8 @@ def main():
     args = parser.parse_args()
 
     student = _fetch_student_snapshot(args.student_id)
-    print(json.dumps(student, indent=2, default=str))
-    #print(recommendations(student))
+    #print(json.dumps(student, indent=2, default=str))
+    print(recommendations(student))
 
 
 if __name__ == "__main__":
