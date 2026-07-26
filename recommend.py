@@ -4,6 +4,7 @@ from pathlib import Path
 
 import anthropic
 import psycopg
+from psycopg.rows import dict_row
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -55,6 +56,14 @@ WHERE id = %s AND student_id = %s
 """
 
 
+FETCH_ACTIVE_TASK_TEMPLATES_SQL = """
+SELECT id, category, sub_category, description, trigger_rule, typical_month, month_schedule,
+       applicable_grades, deadline_type, links
+FROM task_templates
+WHERE is_active = true
+"""
+
+
 def ensure_student_recommendations_table():
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
@@ -101,6 +110,26 @@ def _format_context_articles(context_data):
     return "\n".join(lines)
 
 
+def _fetch_active_task_templates():
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(FETCH_ACTIVE_TASK_TEMPLATES_SQL)
+            return cursor.fetchall()
+
+
+def _format_task_templates(task_templates):
+    lines = []
+    for task in task_templates:
+        parts = [f"id={task['id']}"]
+        for field in ("category", "sub_category", "description", "trigger_rule",
+                      "typical_month", "month_schedule", "applicable_grades", "deadline_type", "links"):
+            value = task.get(field)
+            if value:
+                parts.append(f"{field}={value}")
+        lines.append("- " + " | ".join(parts))
+    return "\n".join(lines)
+
+
 def _strip_code_fence(text):
     text = text.strip()
     if text.startswith("```"):
@@ -122,22 +151,29 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 
-def recommendations(student_snapshot, context="context/gradmap_context.json", triggers="context/triggers.json"):
+def recommendations(student_snapshot, context="context/gradmap_context.json"):
     context_data = _load_json(context)
-    triggers_data = _load_json(triggers)
     context_text = _format_context_articles(context_data)
-    triggers_text = json.dumps(triggers_data, indent=2)
+
+    task_templates = _fetch_active_task_templates()
+    task_templates_text = _format_task_templates(task_templates)
 
     with open("prompts/ai_context_v1.md") as f:
         system_prompt = f.read()
     response = client.messages.create(
         model="claude-haiku-4-5",
         max_tokens=2000,
-        cache_control={"type": "ephemeral"},
-        system=system_prompt,
+        system=[
+            {"type": "text", "text": system_prompt},
+            {
+                "type": "text",
+                "text": f"Active tasks:\n{task_templates_text}",
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
         messages=[{
             "role": "user",
-            "content": f"Student snapshot:\n{student_snapshot}\n\nContext articles:\n{context_text}\n\nTrigger rules:\n{triggers_text}\n\nUse the supporting article URLs from the context when making recommendations, and include the relevant links in the response."
+            "content": f"Student snapshot:\n{student_snapshot}\n\nContext articles:\n{context_text}\n\nUse the supporting article URLs from the context when making recommendations, and include the relevant links in the response."
         }]
 
     )

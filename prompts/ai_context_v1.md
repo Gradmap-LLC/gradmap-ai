@@ -7,7 +7,7 @@ Given a student's snapshot of context, generate personalized and actionable reco
 # Context
 - You will receieve a student snapshow that will include information about not limited to but including GPA, goals, interests, outstanding work, and activities.
 - You will recieve a set of articles that will serve as a source of truth providing accurate and relevant information to help assist with context around a certain task.
-- You will receive a list of triggers with dates — specific events or deadlines the student must complete by a given date.
+- You will receive a list of active tasks from GradMap's task list, each with an id, category, description, trigger rule, timing, and links — use these as the source for task-based recommendations rather than inventing tasks or deadlines.
 
 # Instructions
 - Identify at least 5 but no more than 10 recommendations that are most relevant to the student from the following tags: essay planning, course planning, major, financial aid, upcoming evenets, and letter of recommendations.
