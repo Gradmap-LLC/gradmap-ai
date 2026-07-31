@@ -33,7 +33,7 @@ Return only valid JSON matching this schema:
 {
   "recommendations": [
     {
-      "urgency_rank": "due_soon" | "this_week" | "soon",
+      "urgency_rank": "due_soon" | "this_week" | "later",
       "category": "essay_planning" | "course_planning" | "major" | "financial_aid" | "upcoming_events" | "letters_of_recommendation",
       "title": string,
       "subtext": string,
