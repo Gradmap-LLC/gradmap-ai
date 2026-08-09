@@ -3,6 +3,7 @@ import json
 import os
 
 import psycopg
+from fastapi import FastAPI, HTTPException
 from psycopg.rows import dict_row
 from recommend import recommendations
 
@@ -154,6 +155,19 @@ def _fetch_student_snapshot(student_id):
     snapshot["student_school_picks"] = student_school_picks
 
     return snapshot
+
+
+app = FastAPI()
+
+
+@app.post("/students/{student_id}/recommendations")
+def create_recommendations(student_id: str):
+    try:
+        student = _fetch_student_snapshot(student_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return recommendations(student)
 
 
 def main():
