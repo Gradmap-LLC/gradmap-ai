@@ -85,6 +85,14 @@ WHERE is_active = true
 TASK_TEMPLATE_ESTIMATED_TIME_COLUMN_CANDIDATES = ("estimated_time", "duration_min", "estimated_minutes")
 
 
+FETCH_STUDENT_RECOMMENDATIONS_SQL = """
+SELECT title, category, status
+FROM student_recommendations
+WHERE student_id = %s
+ORDER BY created_at
+"""
+
+
 def ensure_student_recommendations_table():
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
@@ -196,6 +204,24 @@ def _fetch_active_task_templates():
             return cursor.fetchall()
 
 
+def _fetch_student_recommendations(student_id):
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(FETCH_STUDENT_RECOMMENDATIONS_SQL, (student_id,))
+            return cursor.fetchall()
+
+
+def _format_existing_recommendations(existing_recommendations):
+    if not existing_recommendations:
+        return "None yet."
+    lines = []
+    for recommendation in existing_recommendations:
+        category = recommendation.get("category") or "uncategorized"
+        status = recommendation.get("status")
+        lines.append(f"- [{category}] {recommendation['title']} ({status})")
+    return "\n".join(lines)
+
+
 def _format_estimated_time(value):
     if value is None or value == "":
         return None
@@ -242,11 +268,17 @@ if not api_key:
 client = anthropic.Anthropic(api_key=api_key)
 
 def recommendations(student_snapshot, context="context/gradmap_context.json"):
+    student_id = student_snapshot["id"]
+    ensure_student_recommendations_table()
+
     context_data = _load_json(context)
     context_text = _format_context_articles(context_data)
 
     task_templates = _fetch_active_task_templates()
     task_templates_text = _format_task_templates(task_templates)
+
+    existing_recommendations = _fetch_student_recommendations(student_id)
+    existing_recommendations_text = _format_existing_recommendations(existing_recommendations)
 
     with open("prompts/ai_context_v1.md") as f:
         system_prompt = f.read()
@@ -260,6 +292,14 @@ def recommendations(student_snapshot, context="context/gradmap_context.json"):
                 "text": f"Active tasks:\n{task_templates_text}",
                 "cache_control": {"type": "ephemeral"},
             },
+            {
+                "type": "text",
+                "text": (
+                    "Already tracked recommendations for this student (any status — not_started, "
+                    "in_progress, or done). Do not recommend anything with the same underlying goal "
+                    f"as these, even if the wording or category differs:\n{existing_recommendations_text}"
+                ),
+            },
         ],
         messages=[{
             "role": "user",
@@ -269,8 +309,6 @@ def recommendations(student_snapshot, context="context/gradmap_context.json"):
     )
     result = json.loads(_strip_code_fence(response.content[0].text))
 
-    student_id = student_snapshot["id"]
-    ensure_student_recommendations_table()
     for recommendation in result.get("recommendations", []):
         recommendation_id, status, estimated_time = _store_recommendation(student_id, recommendation)
         recommendation["id"] = recommendation_id

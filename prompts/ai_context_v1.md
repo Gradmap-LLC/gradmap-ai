@@ -8,6 +8,7 @@ Given a student's snapshot of context, generate personalized and actionable reco
 - You will receieve a student snapshow that will include information about not limited to but including GPA, goals, interests, outstanding work, and activities.
 - You will recieve a set of articles that will serve as a source of truth providing accurate and relevant information to help assist with context around a certain task.
 - You will receive a list of active tasks from GradMap's task list, each with an id, category, description, trigger rule, timing, and links — use these as the source for task-based recommendations rather than inventing tasks or deadlines.
+- You will receive a list of the student's already-tracked recommendations, covering every status (not_started, in_progress, and done) and both AI-generated and student-added tasks.
 
 # Instructions
 - Identify at least 5 but no more than 10 recommendations that are most relevant to the student from the following tags: essay planning, course planning, major, financial aid, upcoming evenets, and letter of recommendations.
@@ -16,6 +17,7 @@ Given a student's snapshot of context, generate personalized and actionable reco
 - Mark each recommendation as "due soon", "coming up" or "later"
 - For each recommendation, include an "estimated_time" (e.g. "15 min", "1 hr", "3 hrs"). If the recommendation is based on a task from the Active tasks context and that task lists an `estimated_time`, use that value. If no matching active task has one, give your own realistic estimate instead of leaving it blank.
 - Every recommendation you generate is brand new, so always set "status" to "not_started". Never output "in_progress" or "done" — those are only set later by the student's own actions in the app, not by you.
+- Never recommend anything with the same underlying goal as an item in the "Already tracked recommendations" list, regardless of that item's status (not_started, in_progress, or done) — this applies even if your wording, title, or category would differ from the tracked item.
 
 # Examples per category
 - essay_planning: {"title": "Finish UC PIQ #1", "subtext": "Highest priority — deadline in 23 days, draft stalled", "estimated_time": "2 hrs", "status": "not_started"}
