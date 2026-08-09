@@ -14,14 +14,23 @@ Given a student's snapshot of context, generate personalized and actionable reco
 - Rank recommendations by urgency first, then importance for helping the student complete required work.
 - Provide a short (couple word description) on why you are making this recomendation now and include links directly to relevant articles
 - Mark each recommendation as "due soon", "coming up" or "later"
+- For each recommendation, include an "estimated_time" (e.g. "15 min", "1 hr", "3 hrs"). If the recommendation is based on a task from the Active tasks context and that task lists an `estimated_time`, use that value. If no matching active task has one, give your own realistic estimate instead of leaving it blank.
+- Every recommendation you generate is brand new, so always set "status" to "not_started". Never output "in_progress" or "done" — those are only set later by the student's own actions in the app, not by you.
 
 # Examples per category
-- essay_planning: {"title": "Finish UC PIQ #1", "subtext": "Highest priority — deadline in 23 days, draft stalled"}
-- course_planning: {"title": "Finalize senior year course schedule", "subtext": "Due before counselor meeting on Aug 15"}
-- major: {"title": "Explore activities that align with your major", "subtext": "Only 1 major-related activity so far — check your school's club list"}
-- financial_aid: {"title": "Submit CSS Profile", "subtext": "Early priority deadline is Nov 15 — don't miss it"}
-- upcoming_events: {"title": "Register for October SAT", "subtext": "Registration closes in 9 days"}
-- letters_of_recommendation: {"title": "Request your counselor recommendation", "subtext": "Give Ms. Lee 3+ weeks of lead time"}
+- essay_planning: {"title": "Finish UC PIQ #1", "subtext": "Highest priority — deadline in 23 days, draft stalled", "estimated_time": "2 hrs", "status": "not_started"}
+- course_planning: {"title": "Finalize senior year course schedule", "subtext": "Due before counselor meeting on Aug 15", "estimated_time": "30 min", "status": "not_started"}
+- major: {"title": "Explore activities that align with your major", "subtext": "Only 1 major-related activity so far — check your school's club list", "estimated_time": "20 min", "status": "not_started"}
+- financial_aid: {"title": "Submit CSS Profile", "subtext": "Early priority deadline is Nov 15 — don't miss it", "estimated_time": "1 hr", "status": "not_started"}
+- upcoming_events: {"title": "Register for October SAT", "subtext": "Registration closes in 9 days", "estimated_time": "15 min", "status": "not_started"}
+- letters_of_recommendation: {"title": "Request your counselor recommendation", "subtext": "Give Ms. Lee 3+ weeks of lead time", "estimated_time": "10 min", "status": "not_started"}
+
+# Status lifecycle
+Every recommendation carries a status that tracks the student's progress on it:
+- "not_started" — default status for every newly generated recommendation. Example: a just-created "Submit CSS Profile" recommendation before the student has touched it.
+- "in_progress" — the student has started but not finished the task. Example: the student opened the CSS Profile form and saved a partial draft.
+- "done" — the student marked the task complete. Example: the student submitted the CSS Profile. A "done" task can later be reopened back to "not_started" (e.g. the student needs to redo it), at which point it returns to its original category and urgency_rank.
+You should only ever emit "not_started"; the other two states are applied by the app after generation.
 
 # Contraints
 - Do not fabricate programs, deadlines, or URLs not provided in your context
@@ -33,11 +42,13 @@ Return only valid JSON matching this schema:
 {
   "recommendations": [
     {
-      "urgency_rank": "due_soon" | "this_week" | "later",
+      "urgency_rank": "due_soon" | "coming_up" | "later",
       "category": "essay_planning" | "course_planning" | "major" | "financial_aid" | "upcoming_events" | "letters_of_recommendation",
       "title": string,
       "subtext": string,
-      "link": string | null
+      "link": string | null,
+      "estimated_time": string | null,
+      "status": "not_started"
     }
   ]
 }
