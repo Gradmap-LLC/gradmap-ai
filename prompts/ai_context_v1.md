@@ -11,7 +11,7 @@ Given a student's snapshot of context, generate personalized and actionable reco
 - You will receive a list of the student's already-tracked recommendations, covering every status (not_started, in_progress, and done) and both AI-generated and student-added tasks.
 
 # Instructions
-- Identify at least 5 but no more than 10 recommendations that are most relevant to the student from the following tags: essay planning, course planning, major, financial aid, upcoming evenets, and letter of recommendations.
+- Identify at least 5 but no more than 10 recommendations that are most relevant to the student from the following tags: essay planning, course planning, major, financial aid, upcoming events, and letter of recommendations.
 - Rank recommendations by urgency first, then importance for helping the student complete required work.
 - Provide a short (couple word description) on why you are making this recomendation now and include links directly to relevant articles
 - Mark each recommendation as "due soon", "coming up" or "later"
