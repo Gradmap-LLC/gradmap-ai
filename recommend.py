@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS student_recommendations (
     subtext TEXT,
     link TEXT,
     estimated_time TEXT,
+    previous_urgency_rank TEXT,
     status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'done')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS student_recommendations (
 ADD_STUDENT_RECOMMENDATIONS_COLUMNS_SQL = """
 ALTER TABLE student_recommendations
     ADD COLUMN IF NOT EXISTS estimated_time TEXT,
+    ADD COLUMN IF NOT EXISTS previous_urgency_rank TEXT,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 """
 
@@ -68,9 +70,20 @@ RETURNING id, status, estimated_time
 
 UPDATE_RECOMMENDATION_STATUS_SQL = """
 UPDATE student_recommendations
-SET status = %s, updated_at = now()
-WHERE id = %s AND student_id = %s
-RETURNING id, status
+SET
+    previous_urgency_rank = CASE
+        WHEN %(status)s = 'done' AND status != 'done' THEN urgency_rank
+        ELSE previous_urgency_rank
+    END,
+    urgency_rank = CASE
+        WHEN %(status)s = 'done' THEN 'completed'
+        WHEN status = 'done' AND %(status)s != 'done' THEN COALESCE(previous_urgency_rank, urgency_rank)
+        ELSE urgency_rank
+    END,
+    status = %(status)s,
+    updated_at = now()
+WHERE id = %(id)s AND student_id = %(student_id)s
+RETURNING id, status, urgency_rank
 """
 
 
@@ -121,16 +134,21 @@ def _store_recommendation(student_id, recommendation):
 def update_recommendation_status(student_id, recommendation_id, status):
     """Set a recommendation's status to not_started, in_progress, or done.
 
-    Reopening a "done" task (status="not_started") only touches the status
-    column, so the task falls back into its existing category/urgency_rank
-    automatically.
+    Marking a task "done" also moves its urgency_rank to "completed", after
+    stashing the prior urgency_rank in previous_urgency_rank. Moving a "done"
+    task to any other status restores urgency_rank from previous_urgency_rank,
+    so it falls back into its original category/urgency bucket.
     """
     if status not in ALLOWED_STATUSES:
         raise ValueError(f"status must be one of {ALLOWED_STATUSES}, got {status!r}")
 
+    ensure_student_recommendations_table()
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(UPDATE_RECOMMENDATION_STATUS_SQL, (status, recommendation_id, student_id))
+            cursor.execute(
+                UPDATE_RECOMMENDATION_STATUS_SQL,
+                {"status": status, "id": recommendation_id, "student_id": student_id},
+            )
             return cursor.fetchone()
 
 

@@ -5,7 +5,8 @@ import os
 import psycopg
 from fastapi import FastAPI, HTTPException
 from psycopg.rows import dict_row
-from recommend import recommendations
+from pydantic import BaseModel
+from recommend import recommendations, update_recommendation_status
 
 
 DB_CONFIG = {
@@ -160,6 +161,10 @@ def _fetch_student_snapshot(student_id):
 app = FastAPI()
 
 
+class RecommendationStatusUpdate(BaseModel):
+    status: str = "not_started"
+
+
 @app.post("/students/{student_id}/recommendations")
 def create_recommendations(student_id: str):
     try:
@@ -168,6 +173,20 @@ def create_recommendations(student_id: str):
         raise HTTPException(status_code=404, detail=str(error))
 
     return recommendations(student)
+
+
+@app.patch("/students/{student_id}/recommendations/{recommendation_id}")
+def set_recommendation_status(student_id: str, recommendation_id: int, body: RecommendationStatusUpdate):
+    try:
+        result = update_recommendation_status(student_id, recommendation_id, body.status)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    updated_id, status, urgency_rank = result
+    return {"id": updated_id, "status": status, "urgency_rank": urgency_rank}
 
 
 def main():
