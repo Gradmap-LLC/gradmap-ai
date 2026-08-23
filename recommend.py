@@ -106,6 +106,13 @@ ORDER BY created_at
 """
 
 
+FETCH_RECOMMENDATION_SQL = """
+SELECT id, title
+FROM student_recommendations
+WHERE id = %s AND student_id = %s
+"""
+
+
 def ensure_student_recommendations_table():
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
@@ -149,6 +156,13 @@ def update_recommendation_status(student_id, recommendation_id, status):
                 UPDATE_RECOMMENDATION_STATUS_SQL,
                 {"status": status, "id": recommendation_id, "student_id": student_id},
             )
+            return cursor.fetchone()
+
+
+def fetch_recommendation(student_id, recommendation_id):
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(FETCH_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
 

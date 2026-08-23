@@ -1,12 +1,16 @@
 import argparse
 import json
 import os
+from urllib.parse import urlencode
 
 import psycopg
 from fastapi import FastAPI, HTTPException
 from psycopg.rows import dict_row
 from pydantic import BaseModel
-from recommend import recommendations, update_recommendation_status
+from recommend import fetch_recommendation, recommendations, update_recommendation_status
+
+
+GOOGLE_CALENDAR_EVENT_URL = "https://calendar.google.com/calendar/render"
 
 
 DB_CONFIG = {
@@ -187,6 +191,16 @@ def set_recommendation_status(student_id: str, recommendation_id: int, body: Rec
 
     updated_id, status, urgency_rank = result
     return {"id": updated_id, "status": status, "urgency_rank": urgency_rank}
+
+
+@app.get("/students/{student_id}/recommendations/{recommendation_id}/calendar-link")
+def get_recommendation_calendar_link(student_id: str, recommendation_id: int):
+    recommendation = fetch_recommendation(student_id, recommendation_id)
+    if recommendation is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    params = {"action": "TEMPLATE", "text": recommendation["title"]}
+    return {"calendar_url": f"{GOOGLE_CALENDAR_EVENT_URL}?{urlencode(params)}"}
 
 
 def main():
