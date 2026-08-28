@@ -909,6 +909,19 @@ async def get_dashboard() -> dict:
 
 @server.tool(
     description=(
+        "Alias for get_dashboard -- trigger this when the student types '/dashboard' (or "
+        "otherwise uses that exact shorthand) to pull up their GradMap dashboard. This tool does "
+        "nothing on its own; it just calls get_dashboard and returns the same result, so follow "
+        "get_dashboard's own reply instructions afterward (share dashboard_url as a markdown "
+        "link plus the counts, don't list individual recommendations)."
+    )
+)
+async def dashboard() -> dict:
+    return await get_dashboard()
+
+
+@server.tool(
+    description=(
         "Add a new honor or award to the signed-in student's GradMap profile. "
         "Before calling this tool, ask the student directly for the honor's exact title, "
         "whether it is 'Academic' or 'Non-academic' (honor_type), which grade level(s) they "
