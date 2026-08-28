@@ -1124,6 +1124,42 @@ async def remove_recommendation(recommendation_id: int) -> dict:
     return result
 
 
+@server.tool(
+    description=(
+        "Update the status of a recommendation or task on the signed-in student's GradMap "
+        "dashboard -- e.g. mark it in_progress once they've started it, or move it back to "
+        "not_started. (To mark something done, prefer remove_recommendation, which does the same "
+        "PATCH with status=done and reads more naturally when the student says they finished "
+        "something.) Before calling this, make sure you've shown the student their current list "
+        "(e.g. via get_dashboard) and they've confirmed which task by its title. Use the exact "
+        "numeric recommendation_id from that list -- never guess or infer an id."
+    )
+)
+async def edit_recommendation(
+    recommendation_id: int,
+    status: Literal["not_started", "in_progress", "done"],
+) -> dict:
+    student_id = _current_student_id()
+    access_token = get_access_token()
+
+    try:
+        result = await gradmap_request(
+            "PATCH",
+            f"/students/{student_id}/recommendations/{recommendation_id}",
+            access_token.token,
+            json={"status": status},
+        )
+    except GradMapAPIError as error:
+        if error.status_code == 404:
+            raise RuntimeError(
+                f"No recommendation with id {recommendation_id} was found for this student. "
+                "Double-check the id from a recent get_dashboard call."
+            )
+        raise RuntimeError(f"GradMap couldn't update that recommendation ({error.status_code}): {error.detail}")
+
+    return result
+
+
 if __name__ == "__main__":
     # DNS-rebinding protection only trusts the Host header values listed here.
     # Behind a tunnel, requests arrive with Host: <tunnel-domain> (no port), so
