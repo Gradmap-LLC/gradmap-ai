@@ -128,7 +128,12 @@ def _current_student_id() -> str:
         "and GradMap's knowledge base articles. Call this whenever the student asks what they "
         "should work on next, checks their dashboard, or wants an overview of their progress. "
         "Each recommendation includes an urgency rank, a status, and a link to a supporting "
-        "article -- share those links rather than restating the article content yourself."
+        "article -- share those links rather than restating the article content yourself. Each "
+        "recommendation also includes a google_calendar link (pre-filled with that "
+        "recommendation's title and description, no sign-in required) -- when listing "
+        "recommendations, show a small calendar icon (\U0001F4C5) next to each one linking to "
+        "its google_calendar URL, so the student can add it to their own calendar and pick "
+        "their own timing."
     ),
 )
 async def get_dashboard() -> dict:

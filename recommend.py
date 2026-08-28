@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlencode
 
 import anthropic
 import psycopg
@@ -8,6 +9,9 @@ from psycopg.rows import dict_row
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+GOOGLE_CALENDAR_EVENT_URL = "https://calendar.google.com/calendar/render"
 
 
 SCHOOLS_DB_CONFIG = {
@@ -57,15 +61,26 @@ ADD_STUDENT_RECOMMENDATIONS_COLUMNS_SQL = """
 ALTER TABLE student_recommendations
     ADD COLUMN IF NOT EXISTS estimated_time TEXT,
     ADD COLUMN IF NOT EXISTS previous_urgency_rank TEXT,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS google_calendar TEXT
 """
 
 
 INSERT_RECOMMENDATION_SQL = """
-INSERT INTO student_recommendations (student_id, urgency_rank, category, title, subtext, link, estimated_time)
-VALUES (%s, %s, %s, %s, %s, %s, %s)
-RETURNING id, status, estimated_time
+INSERT INTO student_recommendations (student_id, urgency_rank, category, title, subtext, link, estimated_time, google_calendar)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+RETURNING id, status, estimated_time, google_calendar
 """
+
+
+def _build_google_calendar_link(title, subtext=None):
+    """A no-OAuth "add to calendar" link: opens Google Calendar's own event-creation
+    page pre-filled with the recommendation's title/description. No date or time is
+    set -- the student picks their own timing when they open the link."""
+    params = {"action": "TEMPLATE", "text": title or ""}
+    if subtext:
+        params["details"] = subtext
+    return f"{GOOGLE_CALENDAR_EVENT_URL}?{urlencode(params)}"
 
 
 UPDATE_RECOMMENDATION_STATUS_SQL = """
@@ -128,6 +143,7 @@ def ensure_student_recommendations_table():
 
 
 def _store_recommendation(student_id, recommendation):
+    google_calendar = _build_google_calendar_link(recommendation.get("title"), recommendation.get("subtext"))
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -140,6 +156,7 @@ def _store_recommendation(student_id, recommendation):
                     recommendation.get("subtext"),
                     recommendation.get("link"),
                     recommendation.get("estimated_time"),
+                    google_calendar,
                 ),
             )
             return cursor.fetchone()
@@ -191,7 +208,7 @@ def add_student_task(student_id, title, subtext=None, link=None, category=None,
         raise ValueError(f"urgency_rank must be one of {ALLOWED_URGENCY_RANKS}, got {urgency_rank!r}")
 
     ensure_student_recommendations_table()
-    recommendation_id, status, estimated_time = _store_recommendation(
+    recommendation_id, status, estimated_time, google_calendar = _store_recommendation(
         student_id,
         {
             "urgency_rank": urgency_rank,
@@ -211,6 +228,7 @@ def add_student_task(student_id, title, subtext=None, link=None, category=None,
         "link": link,
         "estimated_time": estimated_time,
         "status": status,
+        "google_calendar": google_calendar,
     }
 
 
@@ -358,9 +376,10 @@ def recommendations(student_snapshot, context="context/gradmap_context.json"):
     result = json.loads(_strip_code_fence(response.content[0].text))
 
     for recommendation in result.get("recommendations", []):
-        recommendation_id, status, estimated_time = _store_recommendation(student_id, recommendation)
+        recommendation_id, status, estimated_time, google_calendar = _store_recommendation(student_id, recommendation)
         recommendation["id"] = recommendation_id
         recommendation["status"] = status
         recommendation["estimated_time"] = estimated_time
+        recommendation["google_calendar"] = google_calendar
 
     return result
