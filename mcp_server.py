@@ -142,7 +142,7 @@ _SECTION_META = {
 _SECTION_ORDER = ("due", "week", "later")
 _URGENCY_TO_SECTION = {meta["urgency"]: key for key, meta in _SECTION_META.items()}
 
-DASHBOARD_SESSION_TTL_SECONDS = 30 * 60
+DASHBOARD_SESSION_TTL_SECONDS = 24 * 60 * 60
 _dashboard_sessions: dict[str, dict] = {}
 
 
@@ -693,7 +693,7 @@ def _render_dashboard_page(session_id: str, recommendations: list) -> str:
       <div class="cards" id="done-cards">{done_cards_html}</div>
     </div>
 
-    <p class="foot-note">Changes here save directly to your GradMap account. This link expires after 30 minutes -- ask Claude to show your dashboard again for a fresh one.</p>
+    <p class="foot-note">Changes here save directly to your GradMap account. This link expires after 24 hours -- ask Claude to show your dashboard again for a fresh one.</p>
   </div>
 
   <div class="modal-overlay" id="task-modal-overlay">
