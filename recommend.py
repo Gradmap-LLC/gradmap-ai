@@ -113,6 +113,13 @@ WHERE id = %s AND student_id = %s
 """
 
 
+DELETE_RECOMMENDATION_SQL = """
+DELETE FROM student_recommendations
+WHERE id = %s AND student_id = %s
+RETURNING id, title
+"""
+
+
 def ensure_student_recommendations_table():
     with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
         with connection.cursor() as cursor:
@@ -163,6 +170,15 @@ def fetch_recommendation(student_id, recommendation_id):
     with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
             cursor.execute(FETCH_RECOMMENDATION_SQL, (recommendation_id, student_id))
+            return cursor.fetchone()
+
+
+def delete_recommendation(student_id, recommendation_id):
+    """Delete a recommendation or student-added task. Returns the deleted row
+    (id, title), or None if no matching row exists for this student."""
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(DELETE_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
 

@@ -1,13 +1,24 @@
 import argparse
 import json
 import os
+from typing import Literal
 from urllib.parse import urlencode
 
 import psycopg
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from psycopg.rows import dict_row
-from pydantic import BaseModel
-from recommend import fetch_recommendation, recommendations, update_recommendation_status
+from pydantic import BaseModel, Field
+
+load_dotenv()
+
+from recommend import (
+    add_student_task,
+    delete_recommendation,
+    fetch_recommendation,
+    recommendations,
+    update_recommendation_status,
+)
 
 
 GOOGLE_CALENDAR_EVENT_URL = "https://calendar.google.com/calendar/render"
@@ -169,6 +180,244 @@ class RecommendationStatusUpdate(BaseModel):
     status: str = "not_started"
 
 
+# --- Honors (awards) -------------------------------------------------------
+#
+# honor_array is a JSON array stored per-student on activity_honor.id. There's
+# no per-entry primary key in the schema, so an honor is addressed by its
+# position in the array; the response returns that index as `id` for now.
+
+RECOGNITION_LEVEL_FIELDS = {
+    "school": "isSchoolLevelRecognition",
+    "state": "isStateLevelRecognition",
+    "national": "isNational",
+    "international": "isInternationalLevelRecognition",
+}
+
+# NOTE: field names for 10th/11th grade are inferred from the isGradeNinthLevel /
+# isGradeTwelvethLevel naming pattern seen in the activity_honor export and have
+# not been directly confirmed against the live schema.
+GRADE_LEVEL_FIELDS = {
+    "9": "isGradeNinthLevel",
+    "10": "isGradeTenthLevel",
+    "11": "isGradeEleventhLevel",
+    "12": "isGradeTwelvethLevel",
+    "post_graduate": "isPostGraduateLevel",
+}
+
+SELECT_HONOR_ARRAY_SQL = "SELECT honor_array FROM activity_honor WHERE id = %s"
+
+UPDATE_HONOR_ARRAY_SQL = """
+UPDATE activity_honor
+SET honor_array = %(honor_array)s,
+    number_of_honor = %(number_of_honor)s,
+    updated_at = now()
+WHERE id = %(student_id)s
+RETURNING honor_array
+"""
+
+
+class AddHonorRequest(BaseModel):
+    honor_title: str
+    honor_type: Literal["Academic", "Non-academic"]
+    recognition_level: Literal["school", "state", "national", "international"]
+    grade_levels: list[Literal["9", "10", "11", "12", "post_graduate"]] = Field(min_length=1)
+    action_to_achieve: str | None = None
+    eligibility_requirements: str | None = None
+    include_in_common_app: bool = True
+    include_in_uc_app: bool = True
+    include_in_csu_app: bool = True
+
+
+def _honor_request_to_record(honor: AddHonorRequest) -> dict:
+    record = {
+        "typeOfHonor": honor.honor_type,
+        "honorTitle": honor.honor_title,
+        "actionToAchieveHonor": honor.action_to_achieve or "",
+        "eligibilityRequirementsHonor": honor.eligibility_requirements or "",
+        "isIncludeIntoCommonApp": honor.include_in_common_app,
+        "isIncludeIntoUCApp": honor.include_in_uc_app,
+        "isIncludeIntoCSUApp": honor.include_in_csu_app,
+    }
+    for key, field in RECOGNITION_LEVEL_FIELDS.items():
+        record[field] = key == honor.recognition_level
+    for key, field in GRADE_LEVEL_FIELDS.items():
+        record[field] = key in honor.grade_levels
+    return record
+
+
+def _append_honor(student_id: str, honor: AddHonorRequest) -> tuple[dict, int]:
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_HONOR_ARRAY_SQL, (student_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"Student with ID {student_id} not found.")
+
+            existing = _decode_json_value(row["honor_array"]) or []
+            # Sparse rows in this table sometimes hold placeholder `{}` entries;
+            # they aren't real honors, so don't count them when appending.
+            existing = [entry for entry in existing if entry]
+
+            record = _honor_request_to_record(honor)
+            new_index = len(existing)
+            updated = existing + [record]
+
+            cursor.execute(
+                UPDATE_HONOR_ARRAY_SQL,
+                {
+                    "honor_array": json.dumps(updated),
+                    "number_of_honor": len(updated),
+                    "student_id": student_id,
+                },
+            )
+            connection.commit()
+
+    return record, new_index
+
+
+@app.post("/students/{student_id}/honors")
+def add_honor(student_id: str, body: AddHonorRequest):
+    try:
+        record, index = _append_honor(student_id, body)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return {"id": index, "student_id": student_id, "honor": record}
+
+
+# --- Activities --------------------------------------------------------
+#
+# activity_array is a JSON array stored per-student on activity_honor.id,
+# alongside (but independent of) honor_array. Same addressing scheme as
+# honors: no per-entry primary key, so an activity is addressed by its
+# position in the array.
+
+ACTIVITY_GRADE_LEVEL_FIELDS = {
+    "9": "isGrade9ParticipationLevels",
+    "10": "isGrade10ParticipationLevels",
+    "11": "isGrade11ParticipationLevels",
+    "12": "isGrade12ParticipationLevels",
+    "post_graduate": "isPostGraduateParticipationLevels",
+}
+
+ACTIVITY_TIMING_FIELDS = {
+    "during_school_year": "timmingOfParticipation_duringYear",
+    "during_break": "timmingOfParticipation_duringBreak",
+    "all_year": "timmingOfParticipation_allYear",
+}
+
+SELECT_ACTIVITY_ARRAY_SQL = "SELECT activity_array FROM activity_honor WHERE id = %s"
+
+UPDATE_ACTIVITY_ARRAY_SQL = """
+UPDATE activity_honor
+SET activity_array = %(activity_array)s,
+    is_have_any_activity_to_report = true,
+    updated_at = now()
+WHERE id = %(student_id)s
+RETURNING activity_array
+"""
+
+
+class AddActivityRequest(BaseModel):
+    program_name: str
+    category: str
+    category_uc: str
+    activity_type: str
+    position_description: str
+    is_leadership_role: bool
+    grade_levels: list[Literal["9", "10", "11", "12", "post_graduate"]] = Field(min_length=1)
+    timing: Literal["during_school_year", "during_break", "all_year"]
+    hours_per_week: float
+    weeks_per_year: float
+    description: str
+    is_currently_participating: bool = True
+    intends_to_continue: bool = False
+    notable_distinctions: str | None = None
+    is_paid_work: bool = False
+    organization_description: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    hours_per_week_low: float | None = None
+    hours_per_week_high: float | None = None
+
+
+def _activity_request_to_record(activity: AddActivityRequest) -> dict:
+    record = {
+        "category": activity.category,
+        "categoryUC": activity.category_uc,
+        "activityType": activity.activity_type,
+        "programName": activity.program_name,
+        "activityNameUC": "",
+        "activityExperienceProgramName": activity.program_name,
+        "isInvolvedLeadershipRole": activity.is_leadership_role,
+        "positionDescription": activity.position_description,
+        "isCurrentlyParticipatingActivity": activity.is_currently_participating,
+        "timmingOfParticipation": "",
+        "hoursPerWeek": activity.hours_per_week,
+        "weeksPerYear": activity.weeks_per_year,
+        "isIntendParticipateSimilarActivity": activity.intends_to_continue,
+        "listIndividualDistinctions": activity.notable_distinctions or "",
+        "describeActivity": activity.description,
+        "whatDidYouDo": activity.description,
+        "descriptionExperience": activity.description,
+        "programNameForEducationPreparation": "",
+        "programNameForEducationPreparationSpecify": "",
+        "describeOrganization": activity.organization_description or "",
+        "describeCompany": activity.organization_description or "" if activity.is_paid_work else "",
+        "isStillWork": "true" if (activity.is_paid_work and not activity.end_date) else "",
+        "startDate": activity.start_date or "",
+        "endDate": activity.end_date or "",
+        "hoursPerWeekLowEnd": activity.hours_per_week_low if activity.hours_per_week_low is not None else "",
+        "hoursPerWeekHighEnd": activity.hours_per_week_high if activity.hours_per_week_high is not None else "",
+        "otherCoursewordName": "",
+        "brieflyDescribe": "",
+    }
+    for key, field in ACTIVITY_GRADE_LEVEL_FIELDS.items():
+        record[field] = key in activity.grade_levels
+    for key, field in ACTIVITY_TIMING_FIELDS.items():
+        record[field] = key == activity.timing
+    return record
+
+
+def _append_activity(student_id: str, activity: AddActivityRequest) -> tuple[dict, int]:
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_ACTIVITY_ARRAY_SQL, (student_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"Student with ID {student_id} not found.")
+
+            existing = _decode_json_value(row["activity_array"]) or []
+            # Sparse rows in this table sometimes hold placeholder `{}` entries;
+            # they aren't real activities, so don't count them when appending.
+            existing = [entry for entry in existing if entry]
+
+            record = _activity_request_to_record(activity)
+            new_index = len(existing)
+            updated = existing + [record]
+
+            cursor.execute(
+                UPDATE_ACTIVITY_ARRAY_SQL,
+                {
+                    "activity_array": json.dumps(updated),
+                    "student_id": student_id,
+                },
+            )
+            connection.commit()
+
+    return record, new_index
+
+
+@app.post("/students/{student_id}/activities")
+def add_activity(student_id: str, body: AddActivityRequest):
+    try:
+        record, index = _append_activity(student_id, body)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return {"id": index, "student_id": student_id, "activity": record}
+
+
 @app.post("/students/{student_id}/recommendations")
 def create_recommendations(student_id: str):
     try:
@@ -177,6 +426,40 @@ def create_recommendations(student_id: str):
         raise HTTPException(status_code=404, detail=str(error))
 
     return recommendations(student)
+
+
+class AddRecommendationRequest(BaseModel):
+    title: str
+    subtext: str | None = None
+    link: str | None = None
+    category: str | None = None
+    urgency_rank: str | None = None
+    estimated_time: str | None = None
+
+
+@app.post("/students/{student_id}/recommendations/custom")
+def add_custom_recommendation(student_id: str, body: AddRecommendationRequest):
+    try:
+        return add_student_task(
+            student_id,
+            body.title,
+            subtext=body.subtext,
+            link=body.link,
+            category=body.category,
+            urgency_rank=body.urgency_rank,
+            estimated_time=body.estimated_time,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.delete("/students/{student_id}/recommendations/{recommendation_id}")
+def remove_recommendation(student_id: str, recommendation_id: int):
+    result = delete_recommendation(student_id, recommendation_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    return {"id": result["id"], "title": result["title"], "removed": True}
 
 
 @app.patch("/students/{student_id}/recommendations/{recommendation_id}")
