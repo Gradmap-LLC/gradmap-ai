@@ -15,6 +15,7 @@ load_dotenv()
 from recommend import (
     add_student_task,
     delete_recommendation,
+    fetch_all_recommendations,
     fetch_recommendation,
     recommendations,
     update_recommendation_status,
@@ -426,6 +427,13 @@ def create_recommendations(student_id: str):
         raise HTTPException(status_code=404, detail=str(error))
 
     return recommendations(student)
+
+
+@app.get("/students/{student_id}/recommendations")
+def list_recommendations(student_id: str):
+    """List the student's current recommendations/tasks as already stored --
+    unlike POST (which calls the LLM and inserts new ones), this just reads."""
+    return {"recommendations": fetch_all_recommendations(student_id)}
 
 
 class AddRecommendationRequest(BaseModel):

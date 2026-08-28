@@ -121,6 +121,16 @@ ORDER BY created_at
 """
 
 
+FETCH_ALL_RECOMMENDATIONS_SQL = """
+SELECT id, urgency_rank, category, title, subtext, link, estimated_time, status, google_calendar
+FROM student_recommendations
+WHERE student_id = %s
+ORDER BY
+    CASE urgency_rank WHEN 'due_soon' THEN 0 WHEN 'coming_up' THEN 1 WHEN 'later' THEN 2 ELSE 3 END,
+    created_at
+"""
+
+
 FETCH_RECOMMENDATION_SQL = """
 SELECT id, title
 FROM student_recommendations
@@ -197,6 +207,18 @@ def delete_recommendation(student_id, recommendation_id):
         with connection.cursor() as cursor:
             cursor.execute(DELETE_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
+
+
+def fetch_all_recommendations(student_id):
+    """List the student's current recommendations/tasks as stored, without
+    generating new ones. Use this for anything that re-reads the list (e.g. a
+    dashboard page refresh) -- recommendations() always calls the LLM and
+    inserts new rows, so it's the wrong thing to call on every page load."""
+    ensure_student_recommendations_table()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(FETCH_ALL_RECOMMENDATIONS_SQL, (student_id,))
+            return cursor.fetchall()
 
 
 def add_student_task(student_id, title, subtext=None, link=None, category=None,
