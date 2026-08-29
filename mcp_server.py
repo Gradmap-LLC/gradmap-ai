@@ -192,6 +192,7 @@ def _dashboard_card_html(rec: dict) -> str:
     status = rec.get("status") or "not_started"
     title = html.escape(str(rec.get("title") or ""))
     subtext = html.escape(str(rec.get("subtext") or ""))
+    category_key = html.escape(rec.get("category") or "")
     category_label = html.escape(CATEGORY_LABELS.get(rec.get("category"), rec.get("category") or ""))
     estimated_time = html.escape(str(rec.get("estimated_time") or ""))
     link = rec.get("link")
@@ -224,7 +225,7 @@ def _dashboard_card_html(rec: dict) -> str:
           <div class="card-title">{title}</div>
           <p class="card-subtext">{subtext}</p>
           <div class="card-meta">
-            <span class="chip category">{category_label}</span>
+            <span class="chip category category-{category_key}">{category_label}</span>
             <span class="chip time">{estimated_time}</span>
             {link_html}
           </div>
@@ -245,22 +246,36 @@ def _dashboard_card_html(rec: dict) -> str:
 
 _DASHBOARD_CSS = """
 :root {
-  --bg: #f5f6fb; --surface: #ffffff; --border: #e2e4f0; --border-soft: #ebedf6;
-  --text: #1b1e2b; --text-muted: #5c6178; --text-faint: #8b90a3;
-  --accent: #3d4fe0; --accent-ink: #2c3aad; --accent-tint: #eceeff; --accent-contrast: #ffffff;
-  --due: #c94a3f; --due-tint: #fbebe9; --week: #b8802a; --week-tint: #faf1e2;
-  --later: #3f8a68; --later-tint: #e9f5ef; --track: #e7e9f3;
+  --bg: #ffffff; --surface: #ffffff; --border: #e5e8f0; --border-soft: #eef0f6;
+  --text: #1c2333; --text-muted: #656c7c; --text-faint: #8b90a3;
+  --accent: #3b6fed; --accent-ink: #2354d1; --accent-tint: #edf1fe; --accent-contrast: #ffffff;
+  --due: #c97a1f; --due-tint: #fdf1e2; --week: #2f9e58; --week-tint: #e7f7ec;
+  --later: #7c5ce0; --later-tint: #efecfc; --done: #5b6472; --done-tint: #eef1f5;
+  --track: #e7e9f3;
+  --cat-essay-bg: #ede7fb; --cat-essay-ink: #6e56cf;
+  --cat-course-bg: #e3eefc; --cat-course-ink: #2f6fed;
+  --cat-major-bg: #fbe7f0; --cat-major-ink: #c23b79;
+  --cat-aid-bg: #e3f6ea; --cat-aid-ink: #2f9e58;
+  --cat-events-bg: #fbf0d2; --cat-events-ink: #9c7a1e;
+  --cat-letters-bg: #e0f5f5; --cat-letters-ink: #1f8a8a;
   --shadow: 0 1px 2px rgba(30,34,60,.04), 0 8px 24px -12px rgba(30,34,60,.12);
   --shadow-modal: 0 24px 60px -20px rgba(20,22,40,.35);
-  --focus: #3d4fe0; --done-bg: #fafbfd; --scrim: rgba(16,18,32,.44); --danger: #c94a3f;
+  --focus: #3b6fed; --done-bg: #fafbfd; --scrim: rgba(16,18,32,.44); --danger: #c94a3f;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #14151e; --surface: #1b1d29; --border: #2b2d3d; --border-soft: #262838;
     --text: #e9eaf3; --text-muted: #a4a8bd; --text-faint: #767a91;
-    --accent: #7c89ff; --accent-ink: #c2c9ff; --accent-tint: #262a4a; --accent-contrast: #12142a;
-    --due: #e28178; --due-tint: #3a2323; --week: #dcab5f; --week-tint: #3a301f;
-    --later: #75c19b; --later-tint: #1f3329; --track: #2b2d3d;
+    --accent: #6f92ff; --accent-ink: #b7c6ff; --accent-tint: #232a45; --accent-contrast: #10142a;
+    --due: #dda05a; --due-tint: #362c1c; --week: #6fc290; --week-tint: #1c3324;
+    --later: #a695ef; --later-tint: #2b2646; --done: #9aa1b0; --done-tint: #23262f;
+    --track: #2b2d3d;
+    --cat-essay-bg: #2c2748; --cat-essay-ink: #b7a7f5;
+    --cat-course-bg: #1f2c42; --cat-course-ink: #8ab0f7;
+    --cat-major-bg: #3a2230; --cat-major-ink: #f0a3c6;
+    --cat-aid-bg: #1c3324; --cat-aid-ink: #7fd39d;
+    --cat-events-bg: #3a3320; --cat-events-ink: #e3c877;
+    --cat-letters-bg: #1a3535; --cat-letters-ink: #7fd6d6;
     --shadow: 0 1px 2px rgba(0,0,0,.2), 0 12px 28px -14px rgba(0,0,0,.5);
     --shadow-modal: 0 24px 60px -20px rgba(0,0,0,.6);
     --focus: #9aa4ff; --done-bg: #191a24; --scrim: rgba(6,7,14,.6); --danger: #e28178;
@@ -269,9 +284,16 @@ _DASHBOARD_CSS = """
 :root[data-theme="dark"] {
   --bg: #14151e; --surface: #1b1d29; --border: #2b2d3d; --border-soft: #262838;
   --text: #e9eaf3; --text-muted: #a4a8bd; --text-faint: #767a91;
-  --accent: #7c89ff; --accent-ink: #c2c9ff; --accent-tint: #262a4a; --accent-contrast: #12142a;
-  --due: #e28178; --due-tint: #3a2323; --week: #dcab5f; --week-tint: #3a301f;
-  --later: #75c19b; --later-tint: #1f3329; --track: #2b2d3d;
+  --accent: #6f92ff; --accent-ink: #b7c6ff; --accent-tint: #232a45; --accent-contrast: #10142a;
+  --due: #dda05a; --due-tint: #362c1c; --week: #6fc290; --week-tint: #1c3324;
+  --later: #a695ef; --later-tint: #2b2646; --done: #9aa1b0; --done-tint: #23262f;
+  --track: #2b2d3d;
+  --cat-essay-bg: #2c2748; --cat-essay-ink: #b7a7f5;
+  --cat-course-bg: #1f2c42; --cat-course-ink: #8ab0f7;
+  --cat-major-bg: #3a2230; --cat-major-ink: #f0a3c6;
+  --cat-aid-bg: #1c3324; --cat-aid-ink: #7fd39d;
+  --cat-events-bg: #3a3320; --cat-events-ink: #e3c877;
+  --cat-letters-bg: #1a3535; --cat-letters-ink: #7fd6d6;
   --shadow: 0 1px 2px rgba(0,0,0,.2), 0 12px 28px -14px rgba(0,0,0,.5);
   --shadow-modal: 0 24px 60px -20px rgba(0,0,0,.6);
   --focus: #9aa4ff; --done-bg: #191a24; --scrim: rgba(6,7,14,.6); --danger: #e28178;
@@ -293,7 +315,7 @@ h1 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: clamp
 .btn-ghost { background: transparent; color: var(--text-muted); border-color: var(--border); }
 .btn-ghost:hover { background: var(--border-soft); }
 .btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.stat-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
+.stat-panel { background: var(--accent-tint); border: none; border-radius: 16px;
   padding: 20px 24px; display: grid; grid-template-columns: auto 1fr; gap: 20px 28px; align-items: center; margin-bottom: 32px; }
 .stat-percent { font-variant-numeric: tabular-nums; font-size: 40px; font-weight: 700; line-height: 1; color: var(--accent-ink); }
 .stat-percent span { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-faint); letter-spacing: .04em; text-transform: uppercase; margin-top: 6px; }
@@ -302,17 +324,25 @@ h1 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: clamp
 .stat-breakdown { display: flex; gap: 24px; flex-wrap: wrap; }
 .stat-breakdown div { font-size: 13px; color: var(--text-muted); }
 .stat-breakdown b { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 700; margin-right: 5px; }
-.section { margin-bottom: 30px; }
-.section-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 12px; }
+.section { margin-bottom: 22px; }
+.section-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+  padding: 10px 16px; border-radius: 10px; background: var(--border-soft); }
+.section[data-section="due"] .section-head { background: var(--due-tint); }
+.section[data-section="week"] .section-head { background: var(--week-tint); }
+.section[data-section="later"] .section-head { background: var(--later-tint); }
+.done-section .section-head { background: var(--done-tint); }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .dot.due { background: var(--due); } .dot.week { background: var(--week); } .dot.later { background: var(--later); }
-.dot.done { background: var(--text-faint); }
-.section-head h2 { font-size: 15px; font-weight: 700; margin: 0; }
-.section-head .count { color: var(--text-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+.dot.done { background: var(--done); }
+.section-head h2 { font-size: 14px; font-weight: 700; margin: 0; }
+.section[data-section="due"] .section-head h2 { color: var(--due); }
+.section[data-section="week"] .section-head h2 { color: var(--week); }
+.section[data-section="later"] .section-head h2 { color: var(--later); }
+.done-section .section-head h2 { color: var(--done); }
+.section-head .count { color: var(--text-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .cards { display: flex; flex-direction: column; gap: 10px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--stripe,var(--border));
+.card { background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-.card.due { --stripe: var(--due); } .card.week { --stripe: var(--week); } .card.later { --stripe: var(--later); }
 .card.is-done { background: var(--done-bg); }
 .card.is-done .check-wrap { display: none; } .card.is-done .status-select { display: none; } .card.is-done .undo-btn { display: grid; }
 .card-top { display: flex; align-items: flex-start; gap: 12px; }
@@ -345,9 +375,13 @@ h1 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: clamp
 .card-subtext { color: var(--text-muted); font-size: 13.5px; line-height: 1.5; margin: 0; }
 .card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
-.card.due .chip.category { background: var(--due-tint); color: var(--due); }
-.card.week .chip.category { background: var(--week-tint); color: var(--week); }
-.card.later .chip.category { background: var(--later-tint); color: var(--later); }
+.chip.category { background: var(--border-soft); color: var(--text-muted); }
+.chip.category-essay_planning { background: var(--cat-essay-bg); color: var(--cat-essay-ink); }
+.chip.category-course_planning { background: var(--cat-course-bg); color: var(--cat-course-ink); }
+.chip.category-major { background: var(--cat-major-bg); color: var(--cat-major-ink); }
+.chip.category-financial_aid { background: var(--cat-aid-bg); color: var(--cat-aid-ink); }
+.chip.category-upcoming_events { background: var(--cat-events-bg); color: var(--cat-events-ink); }
+.chip.category-letters_of_recommendation { background: var(--cat-letters-bg); color: var(--cat-letters-ink); }
 .chip.time { background: transparent; border: 1px solid var(--border); color: var(--text-faint); font-weight: 500; }
 .card-meta a.article-link { font-size: 12px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
 .card-meta a.article-link:hover { text-decoration: underline; }
@@ -534,7 +568,7 @@ _DASHBOARD_JS_TEMPLATE = """
             '<div class="card-title">' + escapeHtml(d.title) + "</div>" +
             '<p class="card-subtext">' + escapeHtml(d.subtext || "") + "</p>" +
             '<div class="card-meta">' +
-              '<span class="chip category">' + escapeHtml(d.categoryLabel || "") + "</span>" +
+              '<span class="chip category category-' + escapeHtml(d.category || "") + '">' + escapeHtml(d.categoryLabel || "") + "</span>" +
               '<span class="chip time">' + escapeHtml(d.estimated_time || "") + "</span>" +
               linkHtml +
             "</div>" +
@@ -585,6 +619,7 @@ _DASHBOARD_JS_TEMPLATE = """
         title: title,
         subtext: subtext,
         link: link,
+        category: category,
         categoryLabel: CATEGORY_LABELS[category] || category,
         estimated_time: estimatedTime,
         google_calendar: created.google_calendar
