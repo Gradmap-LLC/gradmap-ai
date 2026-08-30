@@ -963,10 +963,13 @@ async def dashboard() -> dict:
         "received it in (grade_levels), and how wide the recognition was: school, state, "
         "national, or international (recognition_level). Never guess honor_type or "
         "recognition_level -- a wrong guess misrepresents the honor on the student's college "
-        "applications. action_to_achieve and eligibility_requirements are optional; only fill "
-        "them in if the student volunteers that detail. Leave the include_in_*_app flags at "
-        "their default (true, included everywhere) unless the student says they don't want "
-        "this honor listed on a specific application."
+        "applications. Always also ask for two more short details before calling this tool: "
+        "(1) action_to_achieve -- a short description of what the student actually did to earn "
+        "this honor, and (2) eligibility_requirements -- a short description of who qualifies for "
+        "it / what the requirements were. Both are required; never skip asking for them or leave "
+        "them blank. Leave the include_in_*_app flags at their default (true, included "
+        "everywhere) unless the student says they don't want this honor listed on a specific "
+        "application."
     )
 )
 async def add_award(
@@ -974,8 +977,8 @@ async def add_award(
     honor_type: Literal["Academic", "Non-academic"],
     recognition_level: Literal["school", "state", "national", "international"],
     grade_levels: list[Literal["9", "10", "11", "12", "post_graduate"]],
-    action_to_achieve: str | None = None,
-    eligibility_requirements: str | None = None,
+    action_to_achieve: str,
+    eligibility_requirements: str,
     include_in_common_app: bool = True,
     include_in_uc_app: bool = True,
     include_in_csu_app: bool = True,
@@ -1009,19 +1012,26 @@ async def add_award(
 @server.tool(
     description=(
         "Add a new extracurricular activity, club, volunteer work, job, or academic program to "
-        "the signed-in student's GradMap profile. Before calling this tool, ask the student "
-        "directly for: the organization/program name, what category it falls under (e.g. "
-        "'Academic Activity', 'Club/Organization', 'Volunteer Work', 'Work', 'Sports' -- ask "
-        "which fits best rather than guessing), the closest UC application category (e.g. "
-        "'Educational Prep', 'Extracurricular Activity', 'Volunteer/Community Service', 'Work "
-        "Experience'), their role/title, whether it was a leadership role, which grade level(s) "
-        "they participated in, when during the year it happens (during the school year, during "
-        "a break, or all year), hours per week, weeks per year, and a short description of what "
-        "they did. Never guess category, category_uc, activity_type, grade_levels, or timing -- "
-        "these materially affect how the activity reads on a college application. If the "
+        "the signed-in student's GradMap profile. Gather the details through a natural "
+        "back-and-forth conversation -- do NOT dump every field into one long question. Ask a "
+        "couple of related things at a time, react briefly to what the student says, then move "
+        "to the next group. A natural flow: (1) start with the organization/program name and "
+        "what they did there, in their own words (this covers position_description and "
+        "description); (2) once you know roughly what it is, ask what category it falls under -- "
+        "'Academic Activity', 'Club/Organization', 'Volunteer Work', 'Work', 'Sports', etc. -- and "
+        "the closest UC application category ('Educational Prep', 'Extracurricular Activity', "
+        "'Volunteer/Community Service', 'Work Experience'), asking which fits best rather than "
+        "guessing; (3) then ask about their role -- was it a leadership position, which grade "
+        "level(s) were they involved, and any notable distinctions or awards within the activity; "
+        "(4) then ask about time commitment -- when during the year it happens (school year, "
+        "a break, or all year), hours per week, and weeks per year; (5) wrap up by asking if "
+        "they're still doing it and whether they plan to continue. Never guess category, "
+        "category_uc, activity_type, grade_levels, or timing -- these materially affect how the "
+        "activity reads on a college application, so always ask rather than inferring. If the "
         "activity is a paid job, also ask for the employer description and set is_paid_work to "
         "true; start_date/end_date/hours_per_week_low/hours_per_week_high only apply to paid "
-        "work and should otherwise be left blank."
+        "work and should otherwise be left blank. Only call this tool once the conversation has "
+        "naturally covered all the needed fields."
     )
 )
 async def add_activity(
@@ -1081,6 +1091,120 @@ async def add_activity(
         raise RuntimeError(f"GradMap couldn't save this activity ({error.status_code}): {error.detail}")
 
     return {"added": True, "activity": result}
+
+
+@server.tool(
+    description=(
+        "Add a new SAT test score to the signed-in student's GradMap profile. Before calling "
+        "this tool, ask the student directly for the test date, total score, math score, and "
+        "reading/writing score for the test they want to report -- never guess these. Also ask "
+        "whether they have a future SAT test already scheduled; if so, ask for that date too and "
+        "pass has_future_test=true with future_test_date set, otherwise leave has_future_test "
+        "false and future_test_date unset. Don't ask for the student's College Board ID up "
+        "front -- call this tool first without collegeboard_id. If the student doesn't have one "
+        "on file yet, this tool will fail specifically because of that; only then ask the "
+        "student for their College Board ID and call this tool again with collegeboard_id set."
+    )
+)
+async def add_sat_score(
+    test_date: str,
+    total_score: int,
+    math_score: int,
+    reading_writing_score: int,
+    collegeboard_id: str | None = None,
+    has_future_test: bool = False,
+    future_test_date: str | None = None,
+) -> dict:
+    student_id = _current_student_id()
+    access_token = get_access_token()
+
+    try:
+        result = await gradmap_request(
+            "POST",
+            f"/students/{student_id}/sat-scores",
+            access_token.token,
+            json={
+                "test_date": test_date,
+                "total_score": total_score,
+                "math_score": math_score,
+                "reading_writing_score": reading_writing_score,
+                "collegeboard_id": collegeboard_id,
+                "has_future_test": has_future_test,
+                "future_test_date": future_test_date,
+            },
+        )
+    except GradMapAPIError as error:
+        if error.status_code == 409:
+            raise RuntimeError(
+                "This student doesn't have a College Board ID on file yet. Ask the student for "
+                "their College Board ID, then call add_sat_score again with collegeboard_id set."
+            )
+        raise RuntimeError(f"GradMap couldn't save this SAT score ({error.status_code}): {error.detail}")
+
+    return {"added": True, "sat_score": result}
+
+
+@server.tool(
+    description=(
+        "Add a new ACT test score to the signed-in student's GradMap profile. Gather the "
+        "details through a natural back-and-forth conversation, not one long question-dump. A "
+        "natural flow: (1) ask for the test date and composite score; (2) ask for the four "
+        "section scores -- English, Math, Reading, and Science -- these can all go in one "
+        "message since they're closely related; (3) ask whether they took the writing section "
+        "on that test, and only if so, ask for the writing score too; (4) ask whether they have "
+        "a future ACT test already scheduled, and if so ask for that date and pass "
+        "has_future_test=true with future_test_date set, otherwise leave has_future_test false "
+        "and future_test_date unset. Never guess any of these scores or dates. Don't ask for "
+        "the student's ACT ID number up front -- call this tool first without act_id_number. If "
+        "the student doesn't have one on file yet, this tool will fail specifically because of "
+        "that; only then ask the student for their ACT ID number and call this tool again with "
+        "act_id_number set."
+    )
+)
+async def add_act_score(
+    test_date: str,
+    composite_score: int,
+    english_score: int,
+    math_score: int,
+    reading_score: int,
+    science_score: int,
+    took_writing_section: bool = False,
+    writing_score: int | None = None,
+    act_id_number: str | None = None,
+    has_future_test: bool = False,
+    future_test_date: str | None = None,
+) -> dict:
+    student_id = _current_student_id()
+    access_token = get_access_token()
+
+    try:
+        result = await gradmap_request(
+            "POST",
+            f"/students/{student_id}/act-scores",
+            access_token.token,
+            json={
+                "test_date": test_date,
+                "composite_score": composite_score,
+                "english_score": english_score,
+                "math_score": math_score,
+                "reading_score": reading_score,
+                "science_score": science_score,
+                "took_writing_section": took_writing_section,
+                "writing_score": writing_score,
+                "act_id_number": act_id_number,
+                "has_future_test": has_future_test,
+                "future_test_date": future_test_date,
+            },
+        )
+    except GradMapAPIError as error:
+        if error.status_code == 409:
+            raise RuntimeError(
+                "This student doesn't have an ACT ID number on file yet. Ask the student for "
+                "their ACT ID number, then call add_act_score again with act_id_number set."
+            )
+        raise RuntimeError(f"GradMap couldn't save this ACT score ({error.status_code}): {error.detail}")
+
+    return {"added": True, "act_score": result}
 
 
 @server.tool(
@@ -1204,6 +1328,35 @@ async def edit_recommendation(
                 "Double-check the id from a recent get_dashboard call."
             )
         raise RuntimeError(f"GradMap couldn't update that recommendation ({error.status_code}): {error.detail}")
+
+    return result
+
+
+@server.tool(
+    description=(
+        "Look up the signed-in student's saved college list from GradMap -- every school "
+        "they've added, grouped by list name (e.g. 'My Colleges', or a custom list like "
+        "'Mom's list'), each with its likelihood category (reach/target/likely/etc, when set), "
+        "admission result (not_yet/applied/submitted/accepted/committed/etc), city/state, and "
+        "intended major if one was set for that school. Use this to answer questions like 'what "
+        "colleges am I applying to' or 'what's on my list', or to make other advice more "
+        "specific to schools the student has actually saved (e.g. UC-specific guidance for UC "
+        "schools on their list). This is read-only -- there's no tool yet to add or remove a "
+        "college from the list, so don't imply you can do that."
+    )
+)
+async def get_college_list() -> dict:
+    student_id = _current_student_id()
+    access_token = get_access_token()
+
+    try:
+        result = await gradmap_request(
+            "GET",
+            f"/students/{student_id}/college-list",
+            access_token.token,
+        )
+    except GradMapAPIError as error:
+        raise RuntimeError(f"GradMap couldn't load the college list ({error.status_code}): {error.detail}")
 
     return result
 

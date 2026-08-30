@@ -158,6 +158,68 @@ def _fetch_student_school_picks(student_id):
     ]
 
 
+# --- College list ----------------------------------------------------------
+#
+# student_school_picks holds every college a student has saved, grouped by
+# list_group_name (a student/counselor-chosen label like "My Colleges" or
+# "Mom's list"). Most of what a caller wants -- school name, city, state,
+# intended major, application type -- lives inside the metadata JSON blob,
+# not as its own column, so it has to be parsed out per row.
+
+STUDENT_COLLEGE_LIST_SQL = """
+SELECT
+    id,
+    school_id,
+    is_active,
+    student_likelihood_category,
+    list_group_name,
+    sort_order,
+    metadata,
+    admission_result,
+    admission_result_date
+FROM student_school_picks
+WHERE student_id = %s AND is_active = true
+ORDER BY list_group_name NULLS LAST, sort_order NULLS LAST, id
+"""
+
+
+def _school_pick_to_college(row):
+    metadata = _decode_json_value(row["metadata"])
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    return {
+        "id": row["id"],
+        "school_id": row["school_id"],
+        "name": metadata.get("name"),
+        "city": metadata.get("city"),
+        "state": metadata.get("state"),
+        "list_group_name": row["list_group_name"] or "My Colleges",
+        "likelihood_category": row["student_likelihood_category"] or metadata.get("student_ranking"),
+        "admission_result": row["admission_result"],
+        "admission_result_date": row["admission_result_date"],
+        "is_active": row["is_active"],
+        "intended_major": metadata.get("intended_major") or metadata.get("intendedMajor"),
+        "application_type": metadata.get("application_type"),
+        "url": metadata.get("url_address"),
+    }
+
+
+def _fetch_college_list(student_id):
+    with psycopg.connect(**DB_CONFIG["gm_schools"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(STUDENT_COLLEGE_LIST_SQL, (student_id,))
+            rows = cursor.fetchall()
+
+    colleges = [_school_pick_to_college(row) for row in rows]
+
+    lists = {}
+    for college in colleges:
+        lists.setdefault(college["list_group_name"], []).append(college)
+
+    return {"total": len(colleges), "lists": lists}
+
+
 def _fetch_student_snapshot(student_id):
     with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
@@ -175,6 +237,11 @@ def _fetch_student_snapshot(student_id):
 
 
 app = FastAPI()
+
+
+@app.get("/students/{student_id}/college-list")
+def get_college_list(student_id: str):
+    return _fetch_college_list(student_id)
 
 
 class RecommendationStatusUpdate(BaseModel):
@@ -222,8 +289,8 @@ class AddHonorRequest(BaseModel):
     honor_type: Literal["Academic", "Non-academic"]
     recognition_level: Literal["school", "state", "national", "international"]
     grade_levels: list[Literal["9", "10", "11", "12", "post_graduate"]] = Field(min_length=1)
-    action_to_achieve: str | None = None
-    eligibility_requirements: str | None = None
+    action_to_achieve: str
+    eligibility_requirements: str
     include_in_common_app: bool = True
     include_in_uc_app: bool = True
     include_in_csu_app: bool = True
@@ -233,8 +300,8 @@ def _honor_request_to_record(honor: AddHonorRequest) -> dict:
     record = {
         "typeOfHonor": honor.honor_type,
         "honorTitle": honor.honor_title,
-        "actionToAchieveHonor": honor.action_to_achieve or "",
-        "eligibilityRequirementsHonor": honor.eligibility_requirements or "",
+        "actionToAchieveHonor": honor.action_to_achieve,
+        "eligibilityRequirementsHonor": honor.eligibility_requirements,
         "isIncludeIntoCommonApp": honor.include_in_common_app,
         "isIncludeIntoUCApp": honor.include_in_uc_app,
         "isIncludeIntoCSUApp": honor.include_in_csu_app,
@@ -417,6 +484,270 @@ def add_activity(student_id: str, body: AddActivityRequest):
         raise HTTPException(status_code=404, detail=str(error))
 
     return {"id": index, "student_id": student_id, "activity": record}
+
+
+# --- SAT scores ---------------------------------------------------------
+#
+# sat_test has one row per student, addressed by its own student_id column
+# (unlike activity_honor, where the table's id doubles as the student id).
+# Score history lives in csu_info.sat_score (a JSON array); College Board ID
+# lives alongside it at csu_info.collegeBoardId. future_testing_date_1 is a
+# JSON object with up to three date slots (test1/test2/test3) despite the
+# singular column name.
+
+class MissingCollegeBoardIdError(Exception):
+    pass
+
+
+SELECT_SAT_ROW_SQL = """
+SELECT number_of_past_sat_scores, future_sat_tests_plan_to_take, future_testing_date_1, csu_info
+FROM sat_test
+WHERE student_id = %s
+"""
+
+UPDATE_SAT_ROW_SQL = """
+UPDATE sat_test
+SET csu_info = %(csu_info)s,
+    number_of_past_sat_scores = %(number_of_past_sat_scores)s,
+    future_sat_tests_plan_to_take = %(future_sat_tests_plan_to_take)s,
+    future_testing_date_1 = %(future_testing_date_1)s,
+    is_have_sat_scores_report = true,
+    updated_at = now()
+WHERE student_id = %(student_id)s
+"""
+
+
+class AddSatScoreRequest(BaseModel):
+    test_date: str
+    total_score: int
+    math_score: int
+    reading_writing_score: int
+    collegeboard_id: str | None = None
+    has_future_test: bool = False
+    future_test_date: str | None = None
+
+
+def _append_sat_score(student_id: str, body: AddSatScoreRequest) -> dict:
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_SAT_ROW_SQL, (student_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"No SAT record found for student {student_id}.")
+
+            csu_info = _decode_json_value(row["csu_info"])
+            if not isinstance(csu_info, dict):
+                csu_info = {}
+
+            existing_collegeboard_id = csu_info.get("collegeBoardId") or None
+            if not existing_collegeboard_id and not body.collegeboard_id:
+                raise MissingCollegeBoardIdError(
+                    "This student doesn't have a College Board ID on file yet."
+                )
+
+            collegeboard_id = body.collegeboard_id or existing_collegeboard_id
+            csu_info["collegeBoardId"] = collegeboard_id
+
+            sat_scores = csu_info.get("sat_score")
+            if not isinstance(sat_scores, list):
+                sat_scores = []
+            new_score = {
+                "test_date": body.test_date,
+                "total_score": body.total_score,
+                "reading_writing_score": body.reading_writing_score,
+                "math_score": body.math_score,
+                "essay_scores": "",
+                "essay_reading": "",
+                "essay_analysis": "",
+                "essay_writing": "",
+            }
+            sat_scores.append(new_score)
+            csu_info["sat_score"] = sat_scores
+
+            try:
+                past_count = int(row["number_of_past_sat_scores"] or 0)
+            except (TypeError, ValueError):
+                past_count = 0
+            new_past_count = past_count + 1
+
+            future_dates = _decode_json_value(row["future_testing_date_1"])
+            if not isinstance(future_dates, dict):
+                future_dates = {}
+            future_count = row["future_sat_tests_plan_to_take"] or 0
+
+            if body.has_future_test and body.future_test_date:
+                slot = next(
+                    (key for key in ("test1", "test2", "test3") if not future_dates.get(key)),
+                    "test3",
+                )
+                future_dates[slot] = body.future_test_date
+                future_count += 1
+
+            cursor.execute(
+                UPDATE_SAT_ROW_SQL,
+                {
+                    "csu_info": json.dumps(csu_info),
+                    "number_of_past_sat_scores": str(new_past_count),
+                    "future_sat_tests_plan_to_take": future_count,
+                    "future_testing_date_1": json.dumps(future_dates),
+                    "student_id": student_id,
+                },
+            )
+            connection.commit()
+
+    return {
+        "collegeboard_id": collegeboard_id,
+        "number_of_past_sat_scores": new_past_count,
+        "future_sat_tests_plan_to_take": future_count,
+        "latest_score": new_score,
+    }
+
+
+@app.post("/students/{student_id}/sat-scores")
+def add_sat_score(student_id: str, body: AddSatScoreRequest):
+    try:
+        result = _append_sat_score(student_id, body)
+    except MissingCollegeBoardIdError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return {"student_id": student_id, **result}
+
+
+# --- ACT scores ---------------------------------------------------------
+#
+# act_test has one row per student, addressed by its own student_id column,
+# same convention as sat_test. Score history lives in csu_info.act_score (a
+# JSON array); the ACT ID number is its own top-level column (act_id_number),
+# unlike SAT's College Board ID which lives inside csu_info. future_testing_date_1
+# is a JSON object with up to three date slots (test1/test2/test3). The
+# highest_* / superscore_calculated_by_act columns are derived/aggregated
+# elsewhere and are intentionally left untouched here.
+
+class MissingActIdError(Exception):
+    pass
+
+
+SELECT_ACT_ROW_SQL = """
+SELECT number_of_act_score_report, future_act_test_plan_to_take, future_testing_date_1,
+       csu_info, act_id_number, have_taken_act_plus_writing_test
+FROM act_test
+WHERE student_id = %s
+"""
+
+UPDATE_ACT_ROW_SQL = """
+UPDATE act_test
+SET csu_info = %(csu_info)s,
+    number_of_act_score_report = %(number_of_act_score_report)s,
+    future_act_test_plan_to_take = %(future_act_test_plan_to_take)s,
+    future_testing_date_1 = %(future_testing_date_1)s,
+    act_id_number = %(act_id_number)s,
+    have_taken_act_plus_writing_test = %(have_taken_act_plus_writing_test)s,
+    is_have_act_score_report = true,
+    updated_at = now()
+WHERE student_id = %(student_id)s
+"""
+
+
+class AddActScoreRequest(BaseModel):
+    test_date: str
+    composite_score: int
+    english_score: int
+    math_score: int
+    reading_score: int
+    science_score: int
+    took_writing_section: bool = False
+    writing_score: int | None = None
+    act_id_number: str | None = None
+    has_future_test: bool = False
+    future_test_date: str | None = None
+
+
+def _append_act_score(student_id: str, body: AddActScoreRequest) -> dict:
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_ACT_ROW_SQL, (student_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"No ACT record found for student {student_id}.")
+
+            existing_act_id_number = row["act_id_number"] or None
+            if existing_act_id_number == "0":
+                existing_act_id_number = None
+            if not existing_act_id_number and not body.act_id_number:
+                raise MissingActIdError("This student doesn't have an ACT ID number on file yet.")
+
+            act_id_number = body.act_id_number or existing_act_id_number
+
+            csu_info = _decode_json_value(row["csu_info"])
+            if not isinstance(csu_info, dict):
+                csu_info = {}
+
+            act_scores = csu_info.get("act_score")
+            if not isinstance(act_scores, list):
+                act_scores = []
+            new_score = {
+                "test_date": body.test_date,
+                "composite_score": body.composite_score,
+                "english": body.english_score,
+                "mathematics": body.math_score,
+                "reading": body.reading_score,
+                "science": body.science_score,
+                "writing": body.writing_score if body.took_writing_section else "",
+            }
+            act_scores.append(new_score)
+            csu_info["act_score"] = act_scores
+
+            new_past_count = (row["number_of_act_score_report"] or 0) + 1
+
+            future_dates = _decode_json_value(row["future_testing_date_1"])
+            if not isinstance(future_dates, dict):
+                future_dates = {}
+            future_count = row["future_act_test_plan_to_take"] or 0
+
+            if body.has_future_test and body.future_test_date:
+                slot = next(
+                    (key for key in ("test1", "test2", "test3") if not future_dates.get(key)),
+                    "test3",
+                )
+                future_dates[slot] = body.future_test_date
+                future_count += 1
+
+            have_taken_writing = bool(row["have_taken_act_plus_writing_test"]) or body.took_writing_section
+
+            cursor.execute(
+                UPDATE_ACT_ROW_SQL,
+                {
+                    "csu_info": json.dumps(csu_info),
+                    "number_of_act_score_report": new_past_count,
+                    "future_act_test_plan_to_take": future_count,
+                    "future_testing_date_1": json.dumps(future_dates),
+                    "act_id_number": act_id_number,
+                    "have_taken_act_plus_writing_test": have_taken_writing,
+                    "student_id": student_id,
+                },
+            )
+            connection.commit()
+
+    return {
+        "act_id_number": act_id_number,
+        "number_of_act_score_report": new_past_count,
+        "future_act_test_plan_to_take": future_count,
+        "latest_score": new_score,
+    }
+
+
+@app.post("/students/{student_id}/act-scores")
+def add_act_score(student_id: str, body: AddActScoreRequest):
+    try:
+        result = _append_act_score(student_id, body)
+    except MissingActIdError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    return {"student_id": student_id, **result}
 
 
 @app.post("/students/{student_id}/recommendations")
