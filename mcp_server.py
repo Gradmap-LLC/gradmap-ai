@@ -135,8 +135,19 @@ server = MCPServer(
 # --- our own form and call POST /auth/login server-side on submit -----------
 
 
+_URL_RE = re.compile(r"https?://[^\s<>\"]+")
+
+
+def _linkify(text: str) -> str:
+    def _wrap(match: "re.Match[str]") -> str:
+        url = match.group(0).rstrip(".,;:!?)")
+        return f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color:#3346c9">{url}</a>'
+
+    return _URL_RE.sub(_wrap, text)
+
+
 def _login_page_html(flow_id: str, error: str | None = None) -> str:
-    error_html = f'<p style="color:#b00020">{error}</p>' if error else ""
+    error_html = f'<p style="color:#b00020">{_linkify(error)}</p>' if error else ""
     return f"""
     <!doctype html>
     <html>

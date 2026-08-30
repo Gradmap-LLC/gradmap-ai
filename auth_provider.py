@@ -108,11 +108,17 @@ class GradMapOAuthProvider:
         try:
             login_response = await gradmap_login(email, password)
         except GradMapAPIError:
-            raise GradMapLoginError("Incorrect email or password.")
+            raise GradMapLoginError("Incorrect email or password. If you forgot your password, go to https://portal.gradmap.com/#/public/forgot-password to reset it, then reconnect from Claude.")
 
         gradmap_access_token = login_response["access_token"]
         student_id, _exp = _peel_claims(gradmap_access_token)
         print(f"[gradmap-auth] decoded student_id={student_id!r} from login JWT")
+
+        if student_id is None:
+            raise GradMapLoginError(
+                "This account doesn't exist or the password is incorrect. Go to "
+                "portal.gradmap.com to reset your password, then reconnect from Claude."
+            )
 
         del self._pending[flow_id]
 
