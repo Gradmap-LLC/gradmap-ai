@@ -14,8 +14,10 @@ add_award-first rollout plan.
 import html
 import json
 import os
+import re
 import secrets
 import time
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -41,6 +43,69 @@ from gradmap_client import GradMapAPIError, gradmap_request
 # terminates TLS with a real certificate, so the local hop stays plain HTTP.
 ISSUER_URL = os.environ.get("MCP_ISSUER_URL", "http://127.0.0.1:8788")
 RESOURCE_SERVER_URL = os.environ.get("MCP_RESOURCE_URL", f"{ISSUER_URL}/mcp")
+
+# --- GradMap help-center context ----------------------------------------
+#
+# context/gradmap_context.json is a static export of GradMap's help center
+# articles (url/title/author/published_date/content, no category field).
+# It's local reference material, not per-student data, so it's loaded and
+# searched in-process here rather than round-tripping through main.py/Postgres.
+
+CONTEXT_FILE = Path(__file__).parent / "context" / "gradmap_context.json"
+_WORD_RE = re.compile(r"[a-z0-9']+")
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "does", "for",
+    "from", "how", "i", "if", "in", "is", "it", "my", "of", "on", "or", "our",
+    "should", "that", "the", "their", "there", "this", "to", "was", "we", "what",
+    "when", "where", "which", "who", "why", "will", "with", "you", "your",
+}
+
+with open(CONTEXT_FILE, "r", encoding="utf-8") as _f:
+    _HELP_ARTICLES = [
+        a for a in json.load(_f).get("articles", []) if a.get("title") and a.get("url")
+    ]
+
+
+def _tokenize(text: str) -> list[str]:
+    return [w for w in _WORD_RE.findall(text.lower()) if w not in _STOPWORDS and len(w) > 2]
+
+
+def _search_help_articles(query: str, limit: int = 3) -> list[dict]:
+    query_words = set(_tokenize(query))
+    if not query_words:
+        return []
+
+    scored = []
+    for article in _HELP_ARTICLES:
+        title_words = _tokenize(article.get("title", ""))
+        content = article.get("content", "")
+        content_words = _tokenize(content)
+        score = 3 * sum(title_words.count(w) for w in query_words) + sum(
+            content_words.count(w) for w in query_words
+        )
+        if score > 0:
+            scored.append((score, article, content))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    results = []
+    for _score, article, content in scored[:limit]:
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+        best_paragraph = max(
+            paragraphs,
+            key=lambda p: sum(_tokenize(p).count(w) for w in query_words),
+            default=content,
+        )
+        excerpt = best_paragraph[:800]
+        results.append(
+            {
+                "title": article.get("title", ""),
+                "url": article.get("url", ""),
+                "published_date": article.get("published_date", ""),
+                "excerpt": excerpt,
+            }
+        )
+    return results
 
 
 auth_provider = GradMapOAuthProvider()
@@ -1359,6 +1424,24 @@ async def get_college_list() -> dict:
         raise RuntimeError(f"GradMap couldn't load the college list ({error.status_code}): {error.detail}")
 
     return result
+
+
+@server.tool(
+    description=(
+        "Search GradMap's own help center articles for guidance on college planning, "
+        "applications, financial aid, testing, essays, activities, and the general admissions "
+        "process. Call this whenever a student asks a general 'how does X work' / 'what should "
+        "I do about Y' question that isn't about their own saved profile data, to ground your "
+        "answer in GradMap's actual guidance instead of general knowledge. Pass the student's "
+        "question (or the key topic words from it) as the query. If a good match comes back, "
+        "use its content to inform your answer and mention/link the article's url as the "
+        "source. If no good match comes back (empty articles list), just answer from your own "
+        "knowledge -- don't tell the student you searched and found nothing."
+    )
+)
+async def search_help_articles(query: str) -> dict:
+    results = _search_help_articles(query)
+    return {"found": bool(results), "articles": results}
 
 
 if __name__ == "__main__":
