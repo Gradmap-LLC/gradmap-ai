@@ -141,27 +141,140 @@ _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 def _linkify(text: str) -> str:
     def _wrap(match: "re.Match[str]") -> str:
         url = match.group(0).rstrip(".,;:!?)")
-        return f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color:#3346c9">{url}</a>'
+        return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
 
     return _URL_RE.sub(_wrap, text)
 
 
+# Visual styling here mirrors portal.gradmap.com's own login page (same brand
+# blue, fonts, logo/background assets, and layout) so this feels like a native
+# GradMap screen instead of a generic OAuth consent page. Deliberately NOT
+# included: GradMap's Google sign-in, Segment/Intercom/Browsee/Cloudflare
+# analytics, and language/signup chrome -- none of that applies to this
+# email+password bridge flow, and this page collects a password, so it only
+# loads first-party markup/CSS plus GradMap's own public logo/background
+# images, no third-party tracking scripts.
 def _login_page_html(flow_id: str, error: str | None = None) -> str:
-    error_html = f'<p style="color:#b00020">{_linkify(error)}</p>' if error else ""
+    error_html = (
+        f'<div class="error-box">{_linkify(error)}</div>' if error else ""
+    )
     return f"""
     <!doctype html>
     <html>
-      <head><title>Sign in to GradMap</title></head>
-      <body style="font-family: sans-serif; max-width: 360px; margin: 80px auto;">
-        <h2>Sign in to GradMap</h2>
-        <p>Claude needs your GradMap login to act on your behalf.</p>
-        {error_html}
-        <form method="post" action="{auth_provider.login_path}">
-          <input type="hidden" name="flow_id" value="{flow_id}" />
-          <label>Email<br/><input type="email" name="email" required style="width:100%" /></label><br/><br/>
-          <label>Password<br/><input type="password" name="password" required style="width:100%" /></label><br/><br/>
-          <button type="submit">Sign in</button>
-        </form>
+      <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width,initial-scale=1"/>
+        <title>Sign in to GradMap</title>
+        <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+        <style>
+          * {{ box-sizing: border-box; }}
+          body {{
+            margin: 0;
+            font-family: Manrope, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif;
+            background: #fff;
+            color: #212529;
+          }}
+          .layout {{ display: flex; min-height: 100vh; }}
+          .brand-panel {{
+            flex: 0 0 34%;
+            background: url('https://portal.gradmap.com/assets/images/bg-login.png') center/cover no-repeat;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }}
+          .brand-panel img {{ width: 70%; max-width: 340px; }}
+          .form-panel {{
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+          }}
+          .form-card {{ width: 100%; max-width: 380px; }}
+          h1.heading {{ font-size: 28px; font-weight: 500; margin: 0 0 4px; }}
+          p.subhead {{ font-size: 14px; color: #212529; margin: 0 0 24px; }}
+          label {{ display: block; font-size: 14px; font-weight: 500; color: #8894aa; margin-bottom: 6px; }}
+          .field {{ margin-bottom: 20px; }}
+          .input-wrap {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid #cdd7e1;
+            border-radius: 6px;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(21,21,21,0.08);
+            padding: 0 12px;
+          }}
+          .input-wrap svg {{ flex: 0 0 auto; color: #8894aa; }}
+          .input-wrap input {{
+            border: 0;
+            outline: 0;
+            flex: 1;
+            font-size: 15px;
+            padding: 12px 0;
+            font-family: inherit;
+            color: #212529;
+            background: transparent;
+          }}
+          button.submit {{
+            width: 100%;
+            background: #0d6efd;
+            color: #fff;
+            border: 0;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            padding: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 4px;
+          }}
+          button.submit:hover {{ background: #0b5ed7; }}
+          .error-box {{
+            background: #fdecea;
+            border: 1px solid #f5c6c0;
+            color: #b00020;
+            border-radius: 6px;
+            padding: 12px 14px;
+            font-size: 13.5px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+          }}
+          .error-box a {{ color: #0d6efd; font-weight: 600; }}
+          @media (max-width: 760px) {{ .brand-panel {{ display: none; }} }}
+        </style>
+      </head>
+      <body>
+        <div class="layout">
+          <div class="brand-panel">
+            <img src="https://portal.gradmap.com/assets/images/login-logo-blue.png" alt="GradMap"/>
+          </div>
+          <div class="form-panel">
+            <div class="form-card">
+              <h1 class="heading">&#127891; Welcome back!</h1>
+              <p class="subhead">Sign in to connect Claude to your GradMap account.</p>
+              {error_html}
+              <form method="post" action="{auth_provider.login_path}">
+                <input type="hidden" name="flow_id" value="{flow_id}" />
+                <div class="field">
+                  <label>Email</label>
+                  <div class="input-wrap">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    <input type="email" name="email" required placeholder="you@example.com" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Password</label>
+                  <div class="input-wrap">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <input type="password" name="password" required placeholder="********" />
+                  </div>
+                </div>
+                <button type="submit" class="submit">Login</button>
+              </form>
+            </div>
+          </div>
+        </div>
       </body>
     </html>
     """
