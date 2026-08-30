@@ -1434,9 +1434,12 @@ async def get_college_list() -> dict:
         "I do about Y' question that isn't about their own saved profile data, to ground your "
         "answer in GradMap's actual guidance instead of general knowledge. Pass the student's "
         "question (or the key topic words from it) as the query. If a good match comes back, "
-        "use its content to inform your answer and mention/link the article's url as the "
-        "source. If no good match comes back (empty articles list), just answer from your own "
-        "knowledge -- don't tell the student you searched and found nothing."
+        "use its content to inform your answer, then end your reply on its own line with a "
+        "'Read more:' link so the student can go deeper if they want -- e.g. 'Read more: "
+        "[<article title>](<url>)'. If more than one article was genuinely useful, list each on "
+        "its own 'Read more:' line. If no good match comes back (empty articles list), just "
+        "answer from your own knowledge and don't add a Read more line -- don't tell the "
+        "student you searched and found nothing."
     )
 )
 async def search_help_articles(query: str) -> dict:
