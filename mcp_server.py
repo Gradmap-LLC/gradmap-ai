@@ -1022,19 +1022,22 @@ async def dashboard() -> dict:
 
 @server.tool(
     description=(
-        "Add a new honor or award to the signed-in student's GradMap profile. "
-        "Before calling this tool, ask the student directly for the honor's exact title, "
-        "whether it is 'Academic' or 'Non-academic' (honor_type), which grade level(s) they "
-        "received it in (grade_levels), and how wide the recognition was: school, state, "
-        "national, or international (recognition_level). Never guess honor_type or "
-        "recognition_level -- a wrong guess misrepresents the honor on the student's college "
-        "applications. Always also ask for two more short details before calling this tool: "
-        "(1) action_to_achieve -- a short description of what the student actually did to earn "
-        "this honor, and (2) eligibility_requirements -- a short description of who qualifies for "
-        "it / what the requirements were. Both are required; never skip asking for them or leave "
-        "them blank. Leave the include_in_*_app flags at their default (true, included "
-        "everywhere) unless the student says they don't want this honor listed on a specific "
-        "application."
+        "Add a new honor or award to the signed-in student's GradMap profile. Gather the details "
+        "through a natural back-and-forth conversation -- do NOT dump every field into one long "
+        "question. Ask a couple of related things at a time, react briefly to what the student "
+        "says, then move to the next group. A natural flow: (1) start with the honor's exact "
+        "title and a short answer to what they actually did to earn it (action_to_achieve); (2) "
+        "then ask whether it's 'Academic' or 'Non-academic' (honor_type) and how wide the "
+        "recognition was -- school, state, national, or international (recognition_level), "
+        "asking which fits best rather than guessing; (3) then ask which grade level(s) they "
+        "received it in (grade_levels) and a short description of who qualifies for it / what "
+        "the requirements were (eligibility_requirements). Never guess honor_type, "
+        "recognition_level, or grade_levels -- a wrong guess misrepresents the honor on the "
+        "student's college applications. action_to_achieve and eligibility_requirements are "
+        "required too; never skip asking for them or leave them blank. Leave the "
+        "include_in_*_app flags at their default (true, included everywhere) unless the student "
+        "says they don't want this honor listed on a specific application. Only call this tool "
+        "once the conversation has naturally covered all the needed fields."
     )
 )
 async def add_award(
