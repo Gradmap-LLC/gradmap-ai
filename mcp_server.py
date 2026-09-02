@@ -1083,7 +1083,13 @@ def _current_student_id() -> str:
         "interactive task list (AI-generated recommendations plus anything they've added), "
         "covering essay planning, course planning, major exploration, financial aid, upcoming "
         "events, and letters of recommendation. Call this whenever the student asks what they "
-        "should work on next, checks their dashboard, or wants an overview of their progress.\n\n"
+        "should work on next, checks their dashboard, or wants an overview of their progress. "
+        "Before loading the dashboard, this tool asks GradMap's AI to generate fresh "
+        "recommendations for the student, but only if they have 10 or fewer outstanding "
+        "(not-yet-completed) tasks already -- if they already have more than that, it just shows "
+        "the existing list without piling on more. You don't need to call add_recommendations "
+        "separately for this common case; that tool is only for when the student explicitly asks "
+        "for new recommendations outside of viewing the dashboard.\n\n"
         "This tool deliberately returns ONLY dashboard_url, total_tasks, and due_soon_tasks -- "
         "no per-item data. That is the complete, correct response, not a partial or degraded one; "
         "never call this tool again expecting more detail, and never tell the student GradMap "
@@ -1107,7 +1113,7 @@ async def get_dashboard() -> dict:
         try:
             result = await gradmap_request(
                 "POST",
-                f"/students/{student_id}/recommendations",
+                f"/students/{student_id}/recommendations/generate",
                 access_token.token,
             )
         except GradMapAPIError as error:
@@ -1142,6 +1148,36 @@ async def get_dashboard() -> dict:
 )
 async def dashboard() -> dict:
     return await get_dashboard()
+
+
+@server.tool(
+    description=(
+        "Ask GradMap's AI to generate new personalized recommendations/tasks for the "
+        "signed-in student, based on their profile and what's already on their list. Call this "
+        "when the student explicitly asks for new recommendations, fresh suggestions, or more "
+        "things to work on. Do NOT call this just to show the dashboard or automatically after "
+        "every check-in -- use get_dashboard for that, which never generates new tasks. This "
+        "tool only actually generates new recommendations if the student has 10 or fewer "
+        "outstanding (not-yet-completed) tasks; if they have more than that, it skips "
+        "generation and returns generated=false with outstanding_task_count -- in that case, "
+        "tell the student they already have a full list and suggest clearing out or completing "
+        "some existing tasks before asking for more."
+    )
+)
+async def add_recommendations() -> dict:
+    student_id = _current_student_id()
+    access_token = get_access_token()
+
+    try:
+        result = await gradmap_request(
+            "POST",
+            f"/students/{student_id}/recommendations/generate",
+            access_token.token,
+        )
+    except GradMapAPIError as error:
+        raise RuntimeError(f"GradMap couldn't generate recommendations ({error.status_code}): {error.detail}")
+
+    return result
 
 
 @server.tool(

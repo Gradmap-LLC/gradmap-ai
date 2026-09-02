@@ -767,6 +767,32 @@ def list_recommendations(student_id: str):
     return {"recommendations": fetch_all_recommendations(student_id)}
 
 
+MAX_OUTSTANDING_RECOMMENDATIONS = 10
+
+
+@app.post("/students/{student_id}/recommendations/generate")
+def generate_recommendations(student_id: str):
+    """Gated entry point for generating new AI recommendations. Unlike the raw
+    POST /recommendations above, this only calls the LLM (and inserts new rows)
+    up to however many slots are left under MAX_OUTSTANDING_RECOMMENDATIONS --
+    e.g. a student with 8 outstanding tasks only gets up to 2 more, not a full
+    fresh batch, so outstanding count can never exceed the cap after this call."""
+    existing = fetch_all_recommendations(student_id)
+    outstanding_task_count = sum(1 for r in existing if r["status"] != "done")
+    remaining_slots = MAX_OUTSTANDING_RECOMMENDATIONS - outstanding_task_count
+    if remaining_slots <= 0:
+        return {"generated": False, "outstanding_task_count": outstanding_task_count, "recommendations": existing}
+
+    try:
+        student = _fetch_student_snapshot(student_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    recommendations(student, max_recommendations=remaining_slots)  # stores new recommendations as a side effect
+    updated = fetch_all_recommendations(student_id)
+    return {"generated": True, "outstanding_task_count": outstanding_task_count, "recommendations": updated}
+
+
 class AddRecommendationRequest(BaseModel):
     title: str
     subtext: str | None = None

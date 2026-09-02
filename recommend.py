@@ -355,9 +355,12 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 
-def recommendations(student_snapshot, context="context/gradmap_context.json"):
+def recommendations(student_snapshot, context="context/gradmap_context.json", max_recommendations=10):
     student_id = student_snapshot["id"]
     ensure_student_recommendations_table()
+
+    if max_recommendations <= 0:
+        return {"recommendations": []}
 
     context_data = _load_json(context)
     context_text = _format_context_articles(context_data)
@@ -388,6 +391,15 @@ def recommendations(student_snapshot, context="context/gradmap_context.json"):
                     f"as these, even if the wording or category differs:\n{existing_recommendations_text}"
                 ),
             },
+            {
+                "type": "text",
+                "text": (
+                    f'Recommendation limit for this request: generate at most {max_recommendations} '
+                    f"new recommendation(s) this time, even if you have more good ideas. It's fine to "
+                    f"return fewer than {max_recommendations} if you don't have that many truly "
+                    "relevant ones."
+                ),
+            },
         ],
         messages=[{
             "role": "user",
@@ -396,8 +408,9 @@ def recommendations(student_snapshot, context="context/gradmap_context.json"):
 
     )
     result = json.loads(_strip_code_fence(response.content[0].text))
+    result["recommendations"] = result.get("recommendations", [])[:max_recommendations]
 
-    for recommendation in result.get("recommendations", []):
+    for recommendation in result["recommendations"]:
         recommendation_id, status, estimated_time, google_calendar = _store_recommendation(student_id, recommendation)
         recommendation["id"] = recommendation_id
         recommendation["status"] = status
