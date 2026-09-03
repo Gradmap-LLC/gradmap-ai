@@ -114,7 +114,7 @@ TASK_TEMPLATE_ESTIMATED_TIME_COLUMN_CANDIDATES = ("estimated_time", "duration_mi
 
 
 FETCH_STUDENT_RECOMMENDATIONS_SQL = """
-SELECT title, category, status
+SELECT title, subtext, category, status
 FROM student_recommendations
 WHERE student_id = %s
 ORDER BY created_at
@@ -306,7 +306,11 @@ def _format_existing_recommendations(existing_recommendations):
     for recommendation in existing_recommendations:
         category = recommendation.get("category") or "uncategorized"
         status = recommendation.get("status")
-        lines.append(f"- [{category}] {recommendation['title']} ({status})")
+        subtext = recommendation.get("subtext")
+        line = f"- [{category}] {recommendation['title']} ({status})"
+        if subtext:
+            line += f" -- {subtext}"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -387,8 +391,14 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
                 "type": "text",
                 "text": (
                     "Already tracked recommendations for this student (any status — not_started, "
-                    "in_progress, or done). Do not recommend anything with the same underlying goal "
-                    f"as these, even if the wording or category differs:\n{existing_recommendations_text}"
+                    "in_progress, or done), shown as title + subtext where available. Read both the "
+                    "title AND subtext of each one -- two recommendations can have very different "
+                    "titles (e.g. 'Request teacher recommendations early' vs. 'Identify & approach 2 "
+                    "teachers for recommendations') while covering the exact same underlying action, "
+                    "and the subtext is often where that overlap becomes obvious (e.g. both mention "
+                    "'3+ weeks lead time' before requesting a recommendation letter). Do not recommend "
+                    "anything with the same underlying goal as any of these, even if the wording, "
+                    f"title, or category differs:\n{existing_recommendations_text}"
                 ),
             },
             {
