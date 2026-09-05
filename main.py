@@ -659,7 +659,7 @@ class AddActScoreRequest(BaseModel):
     science_score: int
     took_writing_section: bool = False
     writing_score: int | None = None
-    act_id_number: str | None = None
+    act_id_number: int | None = None
     has_future_test: bool = False
     future_test_date: str | None = None
 
@@ -673,7 +673,7 @@ def _append_act_score(student_id: str, body: AddActScoreRequest) -> dict:
                 raise ValueError(f"No ACT record found for student {student_id}.")
 
             existing_act_id_number = row["act_id_number"] or None
-            if existing_act_id_number == "0":
+            if existing_act_id_number == 0:
                 existing_act_id_number = None
             if not existing_act_id_number and not body.act_id_number:
                 raise MissingActIdError("This student doesn't have an ACT ID number on file yet.")

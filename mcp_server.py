@@ -1398,7 +1398,7 @@ async def add_act_score(
     science_score: int,
     took_writing_section: bool = False,
     writing_score: int | None = None,
-    act_id_number: str | None = None,
+    act_id_number: int | None = None,
     has_future_test: bool = False,
     future_test_date: str | None = None,
 ) -> dict:
