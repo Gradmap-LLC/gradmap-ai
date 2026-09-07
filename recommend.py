@@ -62,7 +62,8 @@ ALTER TABLE student_recommendations
     ADD COLUMN IF NOT EXISTS estimated_time TEXT,
     ADD COLUMN IF NOT EXISTS previous_urgency_rank TEXT,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ADD COLUMN IF NOT EXISTS google_calendar TEXT
+    ADD COLUMN IF NOT EXISTS google_calendar TEXT,
+    ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT false
 """
 
 
@@ -124,7 +125,7 @@ ORDER BY created_at
 FETCH_ALL_RECOMMENDATIONS_SQL = """
 SELECT id, urgency_rank, category, title, subtext, link, estimated_time, status, google_calendar
 FROM student_recommendations
-WHERE student_id = %s
+WHERE student_id = %s AND dismissed = false
 ORDER BY
     CASE urgency_rank WHEN 'due_soon' THEN 0 WHEN 'coming_up' THEN 1 WHEN 'later' THEN 2 ELSE 3 END,
     created_at
@@ -142,6 +143,14 @@ DELETE_RECOMMENDATION_SQL = """
 DELETE FROM student_recommendations
 WHERE id = %s AND student_id = %s
 RETURNING id, title
+"""
+
+
+DISMISS_RECOMMENDATION_SQL = """
+UPDATE student_recommendations
+SET dismissed = true, updated_at = now()
+WHERE id = %s AND student_id = %s
+RETURNING id, title, dismissed
 """
 
 
@@ -206,6 +215,23 @@ def delete_recommendation(student_id, recommendation_id):
     with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
             cursor.execute(DELETE_RECOMMENDATION_SQL, (recommendation_id, student_id))
+            return cursor.fetchone()
+
+
+def dismiss_recommendation(student_id, recommendation_id):
+    """Dismiss a recommendation without deleting it: it drops out of every
+    student-facing list (fetch_all_recommendations excludes dismissed=true,
+    so it no longer counts toward the outstanding-recommendation cap either),
+    but the row -- and its title/subtext -- stays available to
+    _fetch_student_recommendations, so the LLM keeps seeing it and won't just
+    suggest the same underlying goal again next time.
+
+    Returns the row (id, title, dismissed), or None if no matching row
+    exists for this student."""
+    ensure_student_recommendations_table()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(DISMISS_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
 
@@ -359,7 +385,16 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 
-def recommendations(student_snapshot, context="context/gradmap_context.json", max_recommendations=10):
+def recommendations(student_snapshot, context="context/gradmap_context.json", max_recommendations=10, category=None):
+    """category, if given, must be one of ALLOWED_CATEGORIES: it narrows the
+    task templates shown to the LLM to that category, instructs it to only
+    suggest within that category, and -- since the LLM's own category field
+    isn't trustworthy enough to rely on alone -- is force-written onto every
+    recommendation this call stores, so the result can never drift from what
+    was actually asked for."""
+    if category is not None and category not in ALLOWED_CATEGORIES:
+        raise ValueError(f"category must be one of {ALLOWED_CATEGORIES}, got {category!r}")
+
     student_id = student_snapshot["id"]
     ensure_student_recommendations_table()
 
@@ -370,10 +405,21 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
     context_text = _format_context_articles(context_data)
 
     task_templates = _fetch_active_task_templates()
+    if category is not None:
+        task_templates = [t for t in task_templates if t.get("category") == category]
     task_templates_text = _format_task_templates(task_templates)
 
     existing_recommendations = _fetch_student_recommendations(student_id)
     existing_recommendations_text = _format_existing_recommendations(existing_recommendations)
+
+    limit_text = (
+        f'Recommendation limit for this request: generate at most {max_recommendations} '
+        f"new recommendation(s) this time, even if you have more good ideas. It's fine to "
+        f"return fewer than {max_recommendations} if you don't have that many truly "
+        "relevant ones."
+    )
+    if category is not None:
+        limit_text += f' Every recommendation must be in the "{category}" category.'
 
     with open("prompts/ai_context_v1.md") as f:
         system_prompt = f.read()
@@ -403,12 +449,7 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
             },
             {
                 "type": "text",
-                "text": (
-                    f'Recommendation limit for this request: generate at most {max_recommendations} '
-                    f"new recommendation(s) this time, even if you have more good ideas. It's fine to "
-                    f"return fewer than {max_recommendations} if you don't have that many truly "
-                    "relevant ones."
-                ),
+                "text": limit_text,
             },
         ],
         messages=[{
@@ -421,6 +462,8 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
     result["recommendations"] = result.get("recommendations", [])[:max_recommendations]
 
     for recommendation in result["recommendations"]:
+        if category is not None:
+            recommendation["category"] = category
         recommendation_id, status, estimated_time, google_calendar = _store_recommendation(student_id, recommendation)
         recommendation["id"] = recommendation_id
         recommendation["status"] = status

@@ -1330,8 +1330,13 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
           <div class="calrow">
             <div class="t"><b>Have time and not sure what to do?</b><div>Ask for a fresh suggestion. Narrow it to one area if you want.</div></div>
             <select id="sug-scope" class="fchip" style="border-radius:var(--r-ctl);padding:8px 11px">
-              <option value="">Anything</option><option>Testing</option><option>Student Development</option>
-              <option>College Applications</option><option>College Prep</option><option>Financial Aid</option>
+              <option value="">Anything</option>
+              <option value="essay_planning">Essay Planning</option>
+              <option value="course_planning">Course Planning</option>
+              <option value="major">Major</option>
+              <option value="financial_aid">Financial Aid</option>
+              <option value="upcoming_events">Upcoming Events</option>
+              <option value="letters_of_recommendation">Letters of Recommendation</option>
             </select>
             <button class="btn" onclick="suggestMore()">Suggest something</button>
           </div>
@@ -1469,6 +1474,9 @@ const MABBR={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,
 let calCursor = new Date(NOW.getFullYear(), NOW.getMonth(), 1);
 
 /* ---------- 1. Student snapshot ---------- */
+// TEMP: hardcoded until auth/session wiring lands; swap for the real id then.
+const STUDENT_ID = 13;
+
 const STUDENT = {
   classYear: 2027,
   gradeLabel: '11th grade · Fall',
@@ -1953,16 +1961,46 @@ function autoRefill(){
 renderTasks();
 
 /* ---------- 5. Suggestions ---------- */
-let SUGS = [
-  {id:1, cat:'Student Development', title:'Enter a robotics competition', urg:'coming_up',
-   why:'A result here would lift the area your profile is thinnest on, and it lines up with the major you picked.', est:''},
-  {id:2, cat:'Student Development', title:'Find a summer program in robotics', urg:'coming_up',
-   why:'Matches the technical thread already in your activities.', est:'40 min', dest:'Summer programs'},
-  {id:3, cat:'Testing', title:'Book an SAT sitting before winter', urg:'due_soon',
-   why:'No test on record and most of your saved schools still read scores.', est:'30 min', dest:'SAT registration'},
-  {id:4, cat:'College Prep', title:'Compare net price at your top 3 schools', urg:'later',
-   why:'Cost is easier to weigh now than in April.', est:'30 min', dest:'Net price in CAM'}
-];
+const API_BASE = 'http://127.0.0.1:8000';
+async function apiFetch(path, opts){
+  const res = await fetch(API_BASE + path, {headers:{'Content-Type':'application/json'}, ...opts});
+  if (!res.ok) throw new Error(`${(opts && opts.method) || 'GET'} ${path} failed: ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+function escHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+/* Backend categories are a fixed machine enum (recommend.py ALLOWED_CATEGORIES),
+   unrelated to display copy -- map them to labels here rather than in the DB. */
+const CATEGORY_LABELS = {
+  essay_planning: 'Essay Planning', course_planning: 'Course Planning', major: 'Major',
+  financial_aid: 'Financial Aid', upcoming_events: 'Upcoming Events',
+  letters_of_recommendation: 'Letters of Recommendation',
+};
+function mapRecommendation(r){
+  return {
+    id: r.id,
+    cat: CATEGORY_LABELS[r.category] || 'General',
+    title: r.title,
+    urg: r.urgency_rank || 'later',
+    why: r.subtext || '',
+    est: r.estimated_time || '',
+    link: r.link || null,
+  };
+}
+
+let SUGS = [];
+/* Suggestions are student_recommendations rows with status='not_started';
+   'in_progress'/'done' means the student already acted on it (see addSug). */
+async function loadSuggestions(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations`); }
+  catch (e) { toast('Could not load suggestions'); return; }
+  SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
+  renderSugs(); renderSugPage();
+}
+
 /* The dashboard card and the Suggestions screen render the same sugCard.
    The card carries its own urgency filter so a student can narrow to
    "due soon" without leaving My Plan.                                   */
@@ -1976,20 +2014,44 @@ function renderSugs(){
     `<button class="fchip2 ${dsugf===k?'on':''}" onclick="dsugFilter('${k}')">${L[k]}</button>`).join('') + '</div>';
   const cats = [...new Set(shown.map(s=>s.cat))];
   const body = shown.length
-    ? cats.map(c => `<div class="sugcat">${c}</div><div class="suggrid">`
+    ? cats.map(c => `<div class="sugcat">${escHtml(c)}</div><div class="suggrid">`
         + shown.filter(s=>s.cat===c).map(sugCard).join('') + '</div>').join('')
     : `<div style="color:var(--muted);text-align:center;padding:20px">Nothing in that filter right now.</div>`;
   document.getElementById('sugbody').innerHTML = chips + body;
 }
-function addSug(id){
+async function addSug(id){
   const s = SUGS.find(x=>x.id===id);
+  if (!s) return;
   if (activeCount() >= CAP){ toast('Your plan is full, finish a task first'); return; }
+  try {
+    await apiFetch(`/students/${STUDENT_ID}/recommendations/${id}`, {
+      method:'PATCH', body: JSON.stringify({status:'in_progress'}),
+    });
+  } catch (e) { toast('Could not add that, try again'); return; }
   TASKS.push({id:Date.now(), t:s.title, cat:s.cat, yr:'now', why:s.why,
               hard:'', target:'', est:s.est, st:'not_started', grade:'11th'});
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderTasks(); toast('Added "'+s.title+'" to your plan');
 }
-function dropSug(id,msg){ SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); toast(msg); }
-renderSugs();
+/* Snooze is local-only -- there's no "snoozed" state in the backend, so this
+   just hides the card for the rest of the session; it reappears next time
+   suggestions are (re)loaded from the server. */
+function snoozeSug(id){
+  const s = SUGS.find(x=>x.id===id);
+  if (!s) return;
+  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); toast('Snoozed');
+}
+/* Dismiss persists: the row is marked dismissed server-side (not deleted),
+   so it stays gone across reloads and no longer counts toward the
+   outstanding-recommendation cap, but the LLM still sees it and won't
+   re-suggest the same underlying goal. */
+async function dismissSug(id){
+  const s = SUGS.find(x=>x.id===id);
+  if (!s) return;
+  try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${id}/dismiss`, {method:'POST'}); }
+  catch (e) { toast('Could not dismiss that, try again'); return; }
+  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); toast('Dismissed');
+}
+loadSuggestions();
 
 
 /* ---------- 7. Quick add ----------
@@ -2300,33 +2362,31 @@ function renderCalendar(){
 /* ---------- 11. Suggestions page ---------- */
 let sugf='all';
 function sugFilter(k){ sugf=k; document.querySelectorAll('[data-sf]').forEach(b=>b.classList.toggle('on', b.dataset.sf===k)); renderSugPage(); }
-const MORE_SUGS={
-  'Testing':{title:'Take a timed SAT practice section',cat:'Testing',urg:'coming_up',why:'You asked for a testing task. A timed section builds stamina before the real sitting.',est:'45 min'},
-  'Student Development':{title:'Find a summer program in your spike area',cat:'Student Development',urg:'coming_up',why:'You asked for an activity. This lines up with the technical thread in your profile.',est:'40 min'},
-  'College Applications':{title:'Outline your Common App personal statement',cat:'College Applications',urg:'coming_up',why:'You asked for an essay task. Start with the longest one and reuse it.',est:'1 hr 30 min'},
-  'College Prep':{title:'Shortlist three schools to visit',cat:'College Prep',urg:'later',why:'You asked for college-prep work. Visits sharpen a list faster than reading does.',est:'30 min'},
-  'Financial Aid':{title:'Compare net price at your top 3 schools',cat:'Financial Aid',urg:'later',why:'You asked for a financial-aid task.',est:'30 min'},
-  '':{title:'Refresh your activities for the season',cat:'Student Development',urg:'coming_up',why:'A quick refresh keeps your profile current and your suggestions sharp.',est:'15 min'}
-};
-let sugId=200;
-function suggestMore(){
-  const scope=document.getElementById('sug-scope').value;
-  SUGS.unshift({id:sugId++, ...(MORE_SUGS[scope]||MORE_SUGS[''])});
+async function suggestMore(){
+  const category = document.getElementById('sug-scope').value || null;
+  let data;
+  try {
+    data = await apiFetch(`/students/${STUDENT_ID}/recommendations/suggest`, {
+      method:'POST', body: JSON.stringify({category}),
+    });
+  } catch (e) { toast('Could not get a new suggestion, try again'); return; }
+  if (!data.generated){ toast('You have plenty of open suggestions already, finish a few first'); return; }
+  SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
   renderSugPage(); renderSugs(); toast('New suggestion added');
 }
 function sugCard(s){
-  const estBit  = hasEst(s) ? `<span class="est">Est. ${s.est}</span>`
+  const estBit  = hasEst(s) ? `<span class="est">Est. ${escHtml(s.est)}</span>`
                             : `<span class="est">Time varies</span>`;
-  const destBit = s.dest ? `<span class="chip" onclick="toast('Opens: ${s.dest}')" style="cursor:pointer">Opens: ${s.dest}</span>` : '';
+  const destBit = s.link ? `<a class="chip" href="${escHtml(s.link)}" target="_blank" rel="noopener" style="text-decoration:none">Open link</a>` : '';
   return `<div class="sug">
-    <div class="r1"><div class="st">${s.title}</div><span class="urg ${s.urg}">${
+    <div class="r1"><div class="st">${escHtml(s.title)}</div><span class="urg ${s.urg}">${
       s.urg==='due_soon'?'Due soon':s.urg==='coming_up'?'Coming up':'Later'}</span></div>
-    <div class="w"><b>Why this</b>${s.why}</div>
-    <div class="trow">${estBit}<span class="chip">${s.cat}</span>${destBit}</div>
+    <div class="w"><b>Why this</b>${escHtml(s.why)}</div>
+    <div class="trow">${estBit}<span class="chip">${escHtml(s.cat)}</span>${destBit}</div>
     <div class="acts">
       <button class="btn" onclick="addSug(${s.id})">Add to my tasks</button>
-      <button class="ghost" onclick="dropSug(${s.id},'Snoozed, back in 2 weeks')">Snooze</button>
-      <button class="ghost" onclick="dropSug(${s.id},'Dismissed')">Dismiss</button>
+      <button class="ghost" onclick="snoozeSug(${s.id})">Snooze</button>
+      <button class="ghost" onclick="dismissSug(${s.id})">Dismiss</button>
     </div></div>`;
 }
 function renderSugPage(){

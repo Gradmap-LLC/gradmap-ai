@@ -7,14 +7,17 @@ from urllib.parse import urlencode
 import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
 from recommend import (
+    ALLOWED_CATEGORIES,
     add_student_task,
     delete_recommendation,
+    dismiss_recommendation,
     fetch_all_recommendations,
     fetch_recommendation,
     recommendations,
@@ -237,6 +240,16 @@ def _fetch_student_snapshot(student_id):
 
 
 app = FastAPI()
+
+# Dev-only: the dashboard HTML is opened straight from disk / a separate dev
+# server, so the browser treats it as a different origin from this API.
+# Tighten this to the real dashboard origin before deploying.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/students/{student_id}/college-list")
@@ -768,6 +781,16 @@ def list_recommendations(student_id: str):
 
 
 MAX_OUTSTANDING_RECOMMENDATIONS = 10
+MAX_SUGGEST_BATCH = 3
+
+
+def _remaining_recommendation_slots(student_id):
+    """Outstanding = not yet done. Dismissed rows are already excluded by
+    fetch_all_recommendations, so a dismiss also frees up its slot."""
+    existing = fetch_all_recommendations(student_id)
+    outstanding_task_count = sum(1 for r in existing if r["status"] != "done")
+    remaining_slots = MAX_OUTSTANDING_RECOMMENDATIONS - outstanding_task_count
+    return existing, outstanding_task_count, remaining_slots
 
 
 @app.post("/students/{student_id}/recommendations/generate")
@@ -777,9 +800,7 @@ def generate_recommendations(student_id: str):
     up to however many slots are left under MAX_OUTSTANDING_RECOMMENDATIONS --
     e.g. a student with 8 outstanding tasks only gets up to 2 more, not a full
     fresh batch, so outstanding count can never exceed the cap after this call."""
-    existing = fetch_all_recommendations(student_id)
-    outstanding_task_count = sum(1 for r in existing if r["status"] != "done")
-    remaining_slots = MAX_OUTSTANDING_RECOMMENDATIONS - outstanding_task_count
+    existing, outstanding_task_count, remaining_slots = _remaining_recommendation_slots(student_id)
     if remaining_slots <= 0:
         return {"generated": False, "outstanding_task_count": outstanding_task_count, "recommendations": existing}
 
@@ -789,6 +810,35 @@ def generate_recommendations(student_id: str):
         raise HTTPException(status_code=404, detail=str(error))
 
     recommendations(student, max_recommendations=remaining_slots)  # stores new recommendations as a side effect
+    updated = fetch_all_recommendations(student_id)
+    return {"generated": True, "outstanding_task_count": outstanding_task_count, "recommendations": updated}
+
+
+class SuggestRequest(BaseModel):
+    category: str | None = None
+
+
+@app.post("/students/{student_id}/recommendations/suggest")
+def suggest_recommendation(student_id: str, body: SuggestRequest):
+    """Backs the dashboard's "Suggest something" button. Unlike /generate
+    (which tops up all the way to the outstanding-recommendation cap), this
+    always asks the LLM for a small batch -- at most MAX_SUGGEST_BATCH -- and
+    can be narrowed to a single category via `category`, still capped by
+    however many slots are left under MAX_OUTSTANDING_RECOMMENDATIONS."""
+    if body.category is not None and body.category not in ALLOWED_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"category must be one of {ALLOWED_CATEGORIES}")
+
+    existing, outstanding_task_count, remaining_slots = _remaining_recommendation_slots(student_id)
+    if remaining_slots <= 0:
+        return {"generated": False, "outstanding_task_count": outstanding_task_count, "recommendations": existing}
+
+    try:
+        student = _fetch_student_snapshot(student_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    batch_size = min(MAX_SUGGEST_BATCH, remaining_slots)
+    recommendations(student, max_recommendations=batch_size, category=body.category)  # stores new recommendations as a side effect
     updated = fetch_all_recommendations(student_id)
     return {"generated": True, "outstanding_task_count": outstanding_task_count, "recommendations": updated}
 
@@ -825,6 +875,18 @@ def remove_recommendation(student_id: str, recommendation_id: int):
         raise HTTPException(status_code=404, detail="Recommendation not found")
 
     return {"id": result["id"], "title": result["title"], "removed": True}
+
+
+@app.post("/students/{student_id}/recommendations/{recommendation_id}/dismiss")
+def dismiss_recommendation_endpoint(student_id: str, recommendation_id: int):
+    """Unlike DELETE above, this keeps the row -- it just stops showing up
+    anywhere for this student (fetch_all_recommendations filters it out, so
+    it also stops counting against MAX_OUTSTANDING_RECOMMENDATIONS)."""
+    result = dismiss_recommendation(student_id, recommendation_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    return {"id": result["id"], "title": result["title"], "dismissed": result["dismissed"]}
 
 
 @app.patch("/students/{student_id}/recommendations/{recommendation_id}")
