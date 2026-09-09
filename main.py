@@ -1,4 +1,5 @@
 import argparse
+import html
 import json
 import os
 from typing import Literal
@@ -8,11 +9,22 @@ import psycopg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
+from google_calendar import (
+    GoogleNotConnectedError,
+    build_authorize_url,
+    complete_connection,
+    create_pending_flow,
+    disconnect as disconnect_google_calendar,
+    is_connected as is_google_calendar_connected,
+    pop_pending_flow,
+    sync_events,
+)
 from recommend import (
     ALLOWED_CATEGORIES,
     add_student_task,
@@ -911,6 +923,88 @@ def get_recommendation_calendar_link(student_id: str, recommendation_id: int):
 
     params = {"action": "TEMPLATE", "text": recommendation["title"]}
     return {"calendar_url": f"{GOOGLE_CALENDAR_EVENT_URL}?{urlencode(params)}"}
+
+
+# --- Google Calendar OAuth + sync --------------------------------------------
+# The dashboard opens a popup to /connect's authorize_url; Google eventually
+# redirects the popup itself (not the dashboard tab) to /oauth-callback, which
+# closes itself and messages the opener via postMessage. See google_calendar.py.
+
+_GOOGLE_CALLBACK_HTML = """<!doctype html>
+<html><body style="font-family:system-ui;text-align:center;padding:40px">
+<p>{message}</p>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage({{ source: 'gradmap-google-calendar', status: '{status}' }}, '*');
+    window.close();
+  }}
+</script>
+</body></html>"""
+
+
+def _google_callback_page(status: str, message: str) -> HTMLResponse:
+    return HTMLResponse(_GOOGLE_CALLBACK_HTML.format(status=status, message=html.escape(message)))
+
+
+@app.get("/students/{student_id}/google-calendar/connect")
+def google_calendar_connect(student_id: str):
+    flow_id = create_pending_flow(student_id)
+    return {"authorize_url": build_authorize_url(flow_id)}
+
+
+@app.get("/google-calendar/oauth-callback")
+def google_calendar_oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    """Fixed, pre-registered redirect URI -- Google redirects here with no way
+    to carry a {student_id} path segment, so `state` (the flow_id from
+    /connect) is what recovers which student this is for."""
+    if error or not code or not state:
+        return _google_callback_page("error", error or "Google did not return an authorization code.")
+
+    student_id = pop_pending_flow(state)
+    if student_id is None:
+        return _google_callback_page("error", "This connection link expired. Please try connecting again.")
+
+    try:
+        complete_connection(student_id, code)
+    except Exception:
+        return _google_callback_page("error", "Could not connect Google Calendar. Please try again.")
+
+    return _google_callback_page("success", "Google Calendar connected. You can close this tab.")
+
+
+@app.get("/students/{student_id}/google-calendar/status")
+def google_calendar_status(student_id: str):
+    return {"connected": is_google_calendar_connected(student_id)}
+
+
+@app.post("/students/{student_id}/google-calendar/disconnect")
+def google_calendar_disconnect(student_id: str):
+    disconnect_google_calendar(student_id)
+    return {"connected": False}
+
+
+class GoogleCalendarSyncItem(BaseModel):
+    source_type: Literal["hard_deadline", "target_date", "own_event"]
+    source_id: str
+    title: str
+    date: str  # YYYY-MM-DD
+    description: str | None = None
+
+
+class GoogleCalendarSyncRequest(BaseModel):
+    items: list[GoogleCalendarSyncItem]
+
+
+@app.post("/students/{student_id}/google-calendar/sync")
+def google_calendar_sync(student_id: str, body: GoogleCalendarSyncRequest):
+    """Full reconciliation, not an incremental append: `items` is treated as
+    the complete current set of calendar-relevant dates for this student, and
+    anything previously synced but missing from it is deleted from Google."""
+    try:
+        sync_events(student_id, [item.model_dump() for item in body.items])
+    except GoogleNotConnectedError:
+        raise HTTPException(status_code=409, detail="Google Calendar is not connected for this student")
+    return {"synced": len(body.items)}
 
 
 def main():
