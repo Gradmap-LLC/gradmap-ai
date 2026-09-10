@@ -15,6 +15,14 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+from apple_calendar import (
+    AppleCalendarAuthError,
+    AppleNotConnectedError,
+    connect as connect_apple_calendar,
+    disconnect as disconnect_apple_calendar,
+    is_connected as is_apple_calendar_connected,
+    sync_events as sync_apple_calendar_events,
+)
 from google_calendar import (
     GoogleNotConnectedError,
     build_authorize_url,
@@ -23,7 +31,7 @@ from google_calendar import (
     disconnect as disconnect_google_calendar,
     is_connected as is_google_calendar_connected,
     pop_pending_flow,
-    sync_events,
+    sync_events as sync_google_calendar_events,
 )
 from recommend import (
     ALLOWED_CATEGORIES,
@@ -1002,9 +1010,63 @@ def google_calendar_sync(student_id: str, body: GoogleCalendarSyncRequest):
     the complete current set of calendar-relevant dates for this student, and
     anything previously synced but missing from it is deleted from Google."""
     try:
-        sync_events(student_id, [item.model_dump() for item in body.items])
+        sync_google_calendar_events(student_id, [item.model_dump() for item in body.items])
     except GoogleNotConnectedError:
         raise HTTPException(status_code=409, detail="Google Calendar is not connected for this student")
+    return {"synced": len(body.items)}
+
+
+# --- Apple/iCloud Calendar via CalDAV ----------------------------------------
+# No OAuth, no popup: the student submits their Apple ID + an app-specific
+# password directly (generated at appleid.apple.com), which we validate
+# against iCloud on the spot. See apple_calendar.py.
+
+class AppleCalendarConnectRequest(BaseModel):
+    apple_id: str
+    app_specific_password: str
+
+
+@app.post("/students/{student_id}/apple-calendar/connect")
+def apple_calendar_connect(student_id: str, body: AppleCalendarConnectRequest):
+    try:
+        connect_apple_calendar(student_id, body.apple_id, body.app_specific_password)
+    except AppleCalendarAuthError as error:
+        raise HTTPException(status_code=401, detail=str(error))
+    return {"connected": True}
+
+
+@app.get("/students/{student_id}/apple-calendar/status")
+def apple_calendar_status(student_id: str):
+    return {"connected": is_apple_calendar_connected(student_id)}
+
+
+@app.post("/students/{student_id}/apple-calendar/disconnect")
+def apple_calendar_disconnect(student_id: str):
+    disconnect_apple_calendar(student_id)
+    return {"connected": False}
+
+
+class AppleCalendarSyncItem(BaseModel):
+    source_type: Literal["hard_deadline", "target_date", "own_event"]
+    source_id: str
+    title: str
+    date: str  # YYYY-MM-DD
+    description: str | None = None
+
+
+class AppleCalendarSyncRequest(BaseModel):
+    items: list[AppleCalendarSyncItem]
+
+
+@app.post("/students/{student_id}/apple-calendar/sync")
+def apple_calendar_sync(student_id: str, body: AppleCalendarSyncRequest):
+    """Same full-reconciliation contract as /google-calendar/sync."""
+    try:
+        sync_apple_calendar_events(student_id, [item.model_dump() for item in body.items])
+    except AppleNotConnectedError:
+        raise HTTPException(status_code=409, detail="Apple Calendar is not connected for this student")
+    except AppleCalendarAuthError as error:
+        raise HTTPException(status_code=401, detail=str(error))
     return {"synced": len(body.items)}
 
 

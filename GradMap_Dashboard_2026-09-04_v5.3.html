@@ -1422,6 +1422,28 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
     </div>
   </div>
 </div>
+<div class="ovl" id="aovl" onclick="if(event.target===this)closeAppleConnect()">
+  <div class="modal" style="max-width:440px">
+    <div class="mhd">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+      <h3>Connect Apple Calendar</h3>
+      <button class="x" onclick="closeAppleConnect()">&times;</button>
+    </div>
+    <div class="mbd">
+      <div class="fgrid">
+        <div class="f wide"><label>Apple ID</label><input type="email" id="ap-email" placeholder="you@icloud.com"></div>
+        <div class="f wide"><label>App-specific password</label><input type="password" id="ap-pass" placeholder="xxxx-xxxx-xxxx-xxxx"></div>
+      </div>
+      <div class="help" style="margin-top:2px">Not your Apple ID password. Generate one at
+        <a href="https://appleid.apple.com" target="_blank" rel="noopener">appleid.apple.com</a> under
+        Sign-In and Security &rarr; App-Specific Passwords.</div>
+      <div class="mfoot">
+        <button class="btn" onclick="submitAppleConnect()">Connect</button>
+        <span class="lands" id="ap-err" style="color:var(--alert)"></span>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- ============ SKILL RUNNER ============
      A skill is never a chat box. It shows what it already knows,
      asks one or two optional questions, generates, and drops the
@@ -1624,12 +1646,22 @@ function renderRoad(){
 renderRoad();
 
 /* ---------- 3. Calendar ---------- */
+/* Google and Apple are both real, independent connections -- either, both,
+   or neither can be active at once. Outlook has no real provider wired, so
+   it stays a cosmetic toggle. calConnected is derived from all three and
+   drives the generic "synced to your calendar" copy used elsewhere (task
+   chips, toasts) that doesn't need to know which provider(s) are active. */
+let googleConnected = false;
+let appleConnected = false;
+let outlookConnected = false;
 let calConnected = false;
-/* Apple/Outlook aren't wired to a real provider -- only Google is. */
+function refreshCalConnectedFlag(){ calConnected = googleConnected || appleConnected || outlookConnected; }
+
 async function connectCal(which){
-  if (which !== 'Google'){
-    calConnected = true; refreshCalendarConnectUI(); renderTasks();
-    toast(which+' calendar connected');
+  if (which === 'Apple'){ openAppleConnect(); return; }
+  if (which === 'Outlook'){
+    outlookConnected = true; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
+    toast('Outlook calendar connected');
     return;
   }
   let data;
@@ -1641,7 +1673,7 @@ async function connectCal(which){
 window.addEventListener('message', async (event) => {
   if (!event.data || event.data.source !== 'gradmap-google-calendar') return;
   if (event.data.status === 'success'){
-    calConnected = true;
+    googleConnected = true; refreshCalConnectedFlag();
     refreshCalendarConnectUI(); renderTasks();
     toast('Google Calendar connected');
     await syncCalendar();
@@ -1652,30 +1684,81 @@ window.addEventListener('message', async (event) => {
 async function disconnectGoogleCalendar(){
   try { await apiFetch(`/students/${STUDENT_ID}/google-calendar/disconnect`, {method:'POST'}); }
   catch (e) { toast('Could not disconnect, try again'); return; }
-  calConnected = false; refreshCalendarConnectUI(); renderTasks();
+  googleConnected = false; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
   toast('Google Calendar disconnected');
 }
 async function checkGoogleCalendarStatus(){
+  try { googleConnected = (await apiFetch(`/students/${STUDENT_ID}/google-calendar/status`)).connected; }
+  catch (e) { /* leave as-is if the check itself fails */ }
+  refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
+}
+function disconnectOutlookCalendar(){
+  outlookConnected = false; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
+  toast('Outlook calendar disconnected');
+}
+
+/* ---- Apple: no OAuth popup -- a credential form (see #aovl) that submits
+   an Apple ID + app-specific password straight to the backend, which
+   validates it against iCloud on the spot (apple_calendar.py). ---- */
+function openAppleConnect(){
+  document.getElementById('ap-email').value = '';
+  document.getElementById('ap-pass').value = '';
+  document.getElementById('ap-err').textContent = '';
+  document.getElementById('aovl').classList.add('open');
+  setTimeout(()=>document.getElementById('ap-email').focus(), 60);
+}
+function closeAppleConnect(){ document.getElementById('aovl').classList.remove('open'); }
+async function submitAppleConnect(){
+  const apple_id = document.getElementById('ap-email').value.trim();
+  const app_specific_password = document.getElementById('ap-pass').value.trim();
+  const err = document.getElementById('ap-err');
+  if (!apple_id || !app_specific_password){ err.textContent = 'Enter your Apple ID and an app-specific password.'; return; }
+  err.textContent = 'Connecting...';
   try {
-    const data = await apiFetch(`/students/${STUDENT_ID}/google-calendar/status`);
-    calConnected = data.connected;
-  } catch (e) { /* leave calConnected false if the check itself fails */ }
-  refreshCalendarConnectUI(); renderTasks();
+    await apiFetch(`/students/${STUDENT_ID}/apple-calendar/connect`, {
+      method:'POST', body: JSON.stringify({apple_id, app_specific_password}),
+    });
+  } catch (e) {
+    err.textContent = 'Incorrect Apple ID or app-specific password.';
+    return;
+  }
+  appleConnected = true; refreshCalConnectedFlag();
+  closeAppleConnect(); refreshCalendarConnectUI(); renderTasks();
+  toast('Apple Calendar connected');
+  await syncCalendar();
+}
+async function disconnectAppleCalendar(){
+  try { await apiFetch(`/students/${STUDENT_ID}/apple-calendar/disconnect`, {method:'POST'}); }
+  catch (e) { toast('Could not disconnect, try again'); return; }
+  appleConnected = false; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
+  toast('Apple Calendar disconnected');
+}
+async function checkAppleCalendarStatus(){
+  try { appleConnected = (await apiFetch(`/students/${STUDENT_ID}/apple-calendar/status`)).connected; }
+  catch (e) { /* leave as-is if the check itself fails */ }
+  refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
+}
+
+function providerChip(name, connected, disconnectFn){
+  return connected
+    ? `<span class="pillbtn" style="display:inline-flex;align-items:center;gap:6px;border-color:#2e7d52;color:#2e7d52">&#10003; ${name}
+         <a onclick="event.stopPropagation();${disconnectFn}()" style="text-decoration:underline;cursor:pointer;color:inherit">Disconnect</a></span>`
+    : `<button class="pillbtn" onclick="connectCal('${name}')">${name}</button>`;
 }
 function renderCalRow(){
   const row = document.getElementById('calrow'); if (!row) return;
-  row.innerHTML = calConnected
-    ? `<div class="calok"><span class="ck">&#10003;</span>
-       <div><b>Calendar connected to Google.</b> Deadlines and your target dates sync automatically. New ones are added as you go.</div></div>
-       <span class="linkbtn" style="margin-left:auto" onclick="disconnectGoogleCalendar()">Disconnect</span>`
-    : `<svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--accent)"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
-       <div class="t"><b>Connect your calendar</b><div>Your deadlines and the target dates you set get pushed to Google, Apple, or Outlook.</div></div>
-       <div style="display:flex;gap:7px;flex-wrap:wrap">
-         <button class="pillbtn" onclick="connectCal('Google')">Google</button>
-         <button class="pillbtn" onclick="connectCal('Apple')">Apple</button>
-         <button class="pillbtn" onclick="connectCal('Outlook')">Outlook</button>
-         <button class="pillbtn" onclick="showScreen('calendar')">See calendar &rarr;</button>
-       </div>`;
+  row.innerHTML =
+      (calConnected
+        ? `<div class="calok"><span class="ck">&#10003;</span>
+           <div><b>Calendar connected.</b> Deadlines and your target dates sync automatically. New ones are added as you go.</div></div>`
+        : `<svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--accent)"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+           <div class="t"><b>Connect your calendar</b><div>Your deadlines and the target dates you set get pushed to Google, Apple, or Outlook.</div></div>`)
+    + `<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">`
+    +   providerChip('Google', googleConnected, 'disconnectGoogleCalendar')
+    +   providerChip('Apple', appleConnected, 'disconnectAppleCalendar')
+    +   providerChip('Outlook', outlookConnected, 'disconnectOutlookCalendar')
+    +   `<button class="pillbtn" onclick="showScreen('calendar')">See calendar &rarr;</button>`
+    + `</div>`;
 }
 function refreshCalendarConnectUI(){ renderCalRow(); renderCalConnect(); }
 /* Builds the full current set of calendar-relevant dates from TASKS/OWN and
@@ -1696,13 +1779,20 @@ function buildCalendarSyncItems(){
 }
 async function syncCalendar(){
   if (!calConnected) return;
-  try {
-    await apiFetch(`/students/${STUDENT_ID}/google-calendar/sync`, {
-      method:'POST', body: JSON.stringify({items: buildCalendarSyncItems()}),
-    });
-  } catch (e) { toast('Could not sync to Google Calendar'); }
+  const items = buildCalendarSyncItems();
+  const jobs = [];
+  if (googleConnected) jobs.push(
+    apiFetch(`/students/${STUDENT_ID}/google-calendar/sync`, {method:'POST', body: JSON.stringify({items})})
+      .catch(()=>toast('Could not sync to Google Calendar'))
+  );
+  if (appleConnected) jobs.push(
+    apiFetch(`/students/${STUDENT_ID}/apple-calendar/sync`, {method:'POST', body: JSON.stringify({items})})
+      .catch(()=>toast('Could not sync to Apple Calendar'))
+  );
+  if (jobs.length) await Promise.all(jobs);
 }
 checkGoogleCalendarStatus();
+checkAppleCalendarStatus();
 
 /* ---------- 4. Tasks ----------
    CAM-season tasks are deliberately NOT in this list. Anything whose
@@ -2384,17 +2474,17 @@ function autoJumpMonth(){
 }
 function renderCalConnect(){
   const host=document.getElementById('cal-connect');
-  host.innerHTML = calConnected
-    ? `<div class="calok"><span class="ck">&#10003;</span><div><b>Calendar connected.</b> Deadlines and target dates sync automatically. New ones are added as you go.</div></div>
-       <span class="linkbtn" style="margin-left:auto" onclick="disconnectGoogleCalendar()">Disconnect</span>`
-    : `<div class="calrow">
-        <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--accent)"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
-        <div class="t"><b>Connect your calendar</b><div>Push these dates to Google, Apple, or Outlook.</div></div>
-        <div style="display:flex;gap:7px;flex-wrap:wrap">
-          <button class="pillbtn" onclick="connectCal('Google')">Google</button>
-          <button class="pillbtn" onclick="connectCal('Apple')">Apple</button>
-          <button class="pillbtn" onclick="connectCal('Outlook')">Outlook</button>
-        </div></div>`;
+  host.innerHTML =
+      (calConnected
+        ? `<div class="calrow"><div class="calok" style="border:none;padding:0"><span class="ck">&#10003;</span><div><b>Calendar connected.</b> Deadlines and target dates sync automatically. New ones are added as you go.</div></div>`
+        : `<div class="calrow">
+            <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--accent)"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+            <div class="t"><b>Connect your calendar</b><div>Push these dates to Google, Apple, or Outlook.</div></div>`)
+    + `<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">`
+    +   providerChip('Google', googleConnected, 'disconnectGoogleCalendar')
+    +   providerChip('Apple', appleConnected, 'disconnectAppleCalendar')
+    +   providerChip('Outlook', outlookConnected, 'disconnectOutlookCalendar')
+    + `</div></div>`;
 }
 function renderCalendar(){
   document.getElementById('cal-title').textContent=MONTHS[calCursor.getMonth()]+' '+calCursor.getFullYear();
