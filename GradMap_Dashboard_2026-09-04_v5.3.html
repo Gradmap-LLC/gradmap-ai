@@ -2258,26 +2258,11 @@ function saveAdd(){
       est:(sels[2]&&sels[2].value)||'30 min', st:'not_started', grade:'11th'});
     renderTasks();
   } else {
-    /* An activity or honor is not just a completeness bump: it is an
-       input to the story. Write it into PROFILE and recompose, so the
-       line at the top of the story card responds to what was entered.  */
-    const sels = document.querySelectorAll('#addform select');
-    if (addKind === 'activity'){
-      PROFILE.activities.push({
-        name: name,
-        role: (document.querySelectorAll('#addform input[type=text]')[1]||{}).value || '',
-        years: pickedGrades().length ? pickedGrades() : ['11'],
-        theme: themeOf(name)
-      });
-    } else {
-      PROFILE.honors.push({
-        name: name,
-        level: (sels[0] && sels[0].value) || 'School',
-        theme: themeOf(name)
-      });
-    }
+    /* This prototype's Quick Add doesn't persist activities/honors to the
+       backend yet (My Story now reads real activity_honor rows, via
+       story.py) -- so it can only bump the readiness bar here, not affect
+       the story. Rebuild picks up a real add made elsewhere in the app. */
     bumpSection('activities', addKind==='honor' ? 9 : 14);
-    refreshStory(); renderOneline(); renderStory();
   }
   let label = `"${name}"`;
   const gs = pickedGrades();
@@ -2881,209 +2866,53 @@ function strengthOf(p){
   return ['Not started','none'];
 }
 /* ---------- The one-line story ----------
-   The angle, theme or tilt: one or two lines describing who this
-   student is. Drafted from the profile, then editable, because the
-   moment the student rewrites it in their own words it stops being
-   a label the app applied and becomes something they own.
+   The angle, theme or tilt: one sentence describing who this student is,
+   drafted by the LLM from their real activities/honors (story.py), then
+   editable -- the moment the student rewrites it in their own words it
+   stops being a label the app applied and becomes something they own.
 
-   STORY.line is the stored field. STORY.byStudent records whether
-   they have touched it. Empty is a real and useful state: "you do
-   not have a story yet" is worth saying, as long as the card also
-   says what would create one.                                      */
-/* ---------- The profile the story is built from ----------
-   These are the same entries the student typed into Activities &
-   Honors and Major Interests. Nothing here is invented for the
-   prototype: the story below is composed from these rows, so adding
-   an activity through Quick Add changes the line you see.
-
-   `theme` is what makes a spike detectable. In the product it is set
-   by the natural-language classifier (skill 5 in the hand-off spec),
-   not typed by the student. Here it is inferred from the entry name
-   by keyword, which is the honest prototype version of the same job. */
-const PROFILE = {
-  majors: ['Computer Science', 'Engineering'],
-  activities: [
-    {name:'Robotics Club',            role:'Team Captain', years:['9','10','11'], theme:'robotics'},
-    {name:'Coding for younger kids',  role:'Volunteer',    years:['10','11'],     theme:'robotics'},
-    {name:'Food bank volunteering',   role:'Volunteer',    years:['10','11'],     theme:'community'}
-  ],
-  honors: [
-    {name:'1st place, State Robotics Championship', level:'State', theme:'robotics'}
-  ]
-};
-
-/* Each theme carries the sentence shape it implies. A robotics student
-   and a debate student are not described with the same verb, and the
-   verb is most of what makes the line sound like a person.            */
-const THEMES = {
-  robotics:  {label:'Robotics',        kind:'make'},
-  software:  {label:'Software',        kind:'make'},
-  research:  {label:'Research',        kind:'investigate'},
-  bio:       {label:'Life sciences',   kind:'investigate'},
-  debate:    {label:'Debate',          kind:'argue'},
-  community: {label:'Community',       kind:'serve'},
-  teaching:  {label:'Teaching',        kind:'serve'},
-  arts:      {label:'Arts',            kind:'create'},
-  writing:   {label:'Writing',         kind:'create'},
-  business:  {label:'Business',        kind:'lead'},
-  athletics: {label:'Athletics',       kind:'lead'},
-  general:   {label:'General',         kind:'make'}
-};
-const OPENER = {
-  make:        t => t === 'the things you build and run'
-                     ? 'A builder, consistently, across everything you have taken on'
-                     : 'A builder who turns ' + t + ' into things other people can use',
-  investigate: t => 'Someone who digs into ' + t + ' until it actually makes sense',
-  argue:       t => 'Someone who can hold an argument together in front of a room',
-  serve:       t => 'Someone who keeps showing up, and has made ' + t + ' the place they do it',
-  create:      t => 'A maker whose work keeps coming back to ' + t,
-  lead:        t => 'The one who ends up organising everyone else around ' + t
-};
-const SENIOR = /captain|president|founder|lead|editor|director|chair/i;
-
-/* Keyword inference, standing in for the classifier. */
-function themeOf(name){
-  const n = (name||'').toLowerCase();
-  if (/robot|maker|engineer|3d/.test(n))              return 'robotics';
-  if (/code|coding|program|software|app|hackathon/.test(n)) return 'software';
-  if (/research|lab|science fair/.test(n))            return 'research';
-  if (/bio|chem|medic|health|hospital/.test(n))       return 'bio';
-  if (/debate|model un|speech|mock trial/.test(n))    return 'debate';
-  if (/volunteer|food bank|shelter|community|service/.test(n)) return 'community';
-  if (/tutor|teach|mentor|kids|club for/.test(n))     return 'teaching';
-  if (/art|music|band|theatre|theater|film|design/.test(n)) return 'arts';
-  if (/write|writing|journal|newspaper|poet/.test(n)) return 'writing';
-  if (/business|entrepreneur|deca|invest|startup/.test(n)) return 'business';
-  if (/team|sport|track|soccer|swim|basketball/.test(n))   return 'athletics';
-  return 'general';
-}
-
-/* ---------- Composing the line ----------
-   Depth, not count. Years carry weight, a senior role carries weight,
-   an honor carries the most, because it is the one piece of evidence
-   somebody outside the student verified. Breadth across unrelated
-   themes scores nothing, which is the whole point: a spike is a
-   pattern, and three unrelated activities are not one.               */
-function composeStory(){
-  const score = {}, used = {};
-  const add = (th, n, label) => {
-    score[th] = (score[th]||0) + n;
-    (used[th] = used[th] || []).push(label);
-  };
-  PROFILE.activities.forEach(a => {
-    const th = a.theme || themeOf(a.name);
-    const yrs = (a.years||[]).length || 1;
-    add(th, yrs + (SENIOR.test(a.role||'') ? 2 : 0),
-        a.name + (yrs>1 ? ' (' + yrs + ' yrs' + (SENIOR.test(a.role||'') ? ', ' + a.role : '') + ')' : ''));
-  });
-  PROFILE.honors.forEach(h => {
-    const th = h.theme || themeOf(h.name);
-    add(th, /state|national|international/i.test(h.level||'') ? 3 : 2, h.name);
-  });
-
-  const clears = (tbl) => {
-    const r = Object.keys(tbl).filter(k=>k!=='general').sort((a,b)=>tbl[b]-tbl[a]);
-    const top = r[0], runner = r[1];
-    /* A spike has to be both substantial and dominant. Substantial alone
-       is a hobby; dominant alone is noise.                              */
-    return (top && tbl[top] >= 4 && (!runner || tbl[top] - tbl[runner] >= 2)) ? top : null;
-  };
-
-  /* First try the specific theme. If nothing clears there, try the family
-     the themes belong to, because robotics and software are one thread in
-     a student's life even though they are two labels in ours. A spike can
-     be "Robotics" or it can be "Building things"; both are real, and the
-     second is what stops a genuine thread reading as scatter.           */
-  let top = clears(score), atKind = false;
-  if (!top){
-    const byKind = {}, kindUsed = {};
-    Object.keys(score).forEach(th=>{
-      if (th === 'general') return;
-      const k = (THEMES[th]||THEMES.general).kind;
-      byKind[k] = (byKind[k]||0) + score[th];
-      kindUsed[k] = (kindUsed[k]||[]).concat(used[th]||[]);
-    });
-    const k = clears(byKind);
-    if (k){ top = k; atKind = true; used[k] = kindUsed[k]; }
-  }
-
-  if (!top) return {enough:false, from:[], spike:'', line:''};
-
-  const KIND_LABEL = {make:'Building', investigate:'Research', argue:'Advocacy',
-                      serve:'Service', create:'Creative', lead:'Leadership'};
-  const t  = atKind ? {label:KIND_LABEL[top]||'General', kind:top}
-                    : (THEMES[top] || THEMES.general);
-  const th = atKind ? 'the things you build and run' : t.label.toLowerCase();
-  const field = PROFILE.majors.length
-    ? PROFILE.majors[0].toLowerCase()
-    : 'what you study next';
-
-  return {
-    enough: true,
-    spike: (PROFILE.majors.length ? fieldOf(PROFILE.majors) + ' · ' : '') + t.label,
-    line: OPENER[t.kind](th) + ', and wants to keep doing that in ' + field + '.',
-    from: used[top]
-  };
-}
-/* The badge names the discipline, not the major, so two CS students
-   with different threads do not read identically.                    */
-function fieldOf(majors){
-  const m = majors.join(' ').toLowerCase();
-  if (/comput|engineer|math|physic|data/.test(m)) return 'STEM';
-  if (/bio|health|nurs|neuro|chem/.test(m))       return 'Sciences';
-  if (/business|econ|financ|market/.test(m))      return 'Business';
-  if (/art|design|film|music|theat/.test(m))      return 'Arts';
-  if (/polit|histor|english|philos|socio/.test(m))return 'Humanities';
-  return 'General';
-}
-
-const STORY = { line:'', spike:'', byStudent:false, from:[] };
-function refreshStory(){
-  const c = composeStory();
-  STORY.spike = c.spike;
-  STORY.from  = c.from;
-  if (!STORY.byStudent) STORY.line = c.enough ? c.line : '';
-  return c;
-}
+   Unlike recommendations/suggestions, this never regenerates itself: STORY
+   is only ever set by loadStory() (once, at boot) or by an explicit
+   rebuildLine()/saveLine() call, each a real round trip to the backend.
+   rebuildsRemaining is enforced server-side (MAX_STORY_REBUILDS_PER_DAY). */
+const STORY_REBUILD_CAP = 3;
+let STORY = { line:'', spike:'', byStudent:false, from:[], rebuildsRemaining:STORY_REBUILD_CAP };
 let editingLine = false;
 
-/* What is missing, said in terms the student can act on. Read off the
-   same sections as the pillars so the two never disagree.           */
-/* Why there is no story yet, in the terms the composer actually uses.
-   "Add more activities" is useless advice. "Your entries point in three
-   different directions" is something a student can act on.            */
-function storyGap(){
-  const n = PROFILE.activities.length;
-  if (n < 2) return 'You have <b>'+n+' activit'+(n===1?'y':'ies')+'</b> logged. A story needs at least a couple of entries before there is a thread to find.';
-
-  const themes = {};
-  let unknown = 0;
-  PROFILE.activities.forEach(a=>{
-    const t = a.theme || themeOf(a.name);
-    if (t === 'general') unknown++;
-    themes[t] = (themes[t]||0)+1;
-  });
-
-  /* Three diagnoses, and telling them apart matters more than the wording.
-     Saying "your activities point in different directions" to a student
-     whose entries we simply failed to read is a wrong diagnosis, and a
-     wrong diagnosis is worse than none: they would go and change real
-     things about their life to fix a problem they do not have.          */
-  if (unknown > n / 2)
-    return 'We could not tell what <b>'+unknown+' of your '+n+' activities</b> are about from their names alone. Add a role and a line on what you actually did, and the thread will be easier to see.';
-
-  /* Count families, not labels, for the same reason the composer does:
-     robotics and coding are one direction, not two.                   */
-  const fams = {};
-  Object.keys(themes).forEach(t=>{
-    if (t==='general') return;
-    fams[(THEMES[t]||THEMES.general).kind] = true;
-  });
-  const spread = Object.keys(fams).length;
-  if (spread > 1)
-    return 'Your activities point in <b>'+spread+' different directions</b>. Depth in one of them will say more than another new one.';
-
-  return 'There is a thread here, it is just thin. Another year in the same area, a role, or a result would make it readable.';
+function applyStoryResponse(s){
+  STORY = {
+    line: s.line || '', spike: s.spike || '', byStudent: !!s.edited_by_student,
+    from: s.built_from || [], rebuildsRemaining: s.rebuilds_remaining_today ?? STORY_REBUILD_CAP,
+  };
+}
+async function loadStory(){
+  try { applyStoryResponse(await apiFetch(`/students/${STUDENT_ID}/story`)); }
+  catch (e) { /* leave STORY at its empty default if the load fails */ }
+  renderOneline(); renderStory();
+}
+function rebuildLabel(){
+  return 'Rebuild from my profile ('+STORY.rebuildsRemaining+' left today)';
+}
+async function rebuildLine(){
+  if (STORY.rebuildsRemaining <= 0){ toast("You've used all "+STORY_REBUILD_CAP+" rebuilds for today"); return; }
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/story/rebuild`, {method:'POST'}); }
+  catch (e) { toast('Could not rebuild your story, try again'); return; }
+  applyStoryResponse(data.story);
+  renderOneline(); renderStory();
+  toast(data.generated ? 'Rebuilt from your profile' : "You've used all your rebuilds for today");
+}
+function editLine(){ editingLine = true; renderOneline(); }
+function cancelLine(){ editingLine = false; renderOneline(); }
+async function saveLine(){
+  const v = (document.getElementById('ol-in').value||'').trim();
+  editingLine = false;
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/story`, {method:'PATCH', body: JSON.stringify({line:v})}); }
+  catch (e) { toast('Could not save, try again'); return; }
+  applyStoryResponse(data);
+  renderOneline(); renderStory();   /* the pillar footer depends on there being a story */
+  toast(v ? 'Your story saved' : 'Story cleared');
 }
 
 function renderOneline(){
@@ -3092,7 +2921,7 @@ function renderOneline(){
 
   if (editingLine){
     host.innerHTML =
-        '<div class="spike">◆ '+STORY.spike+'</div>'
+        (STORY.spike ? '<div class="spike">◆ '+escHtml(STORY.spike)+'</div>' : '')
       + '<textarea id="ol-in" maxlength="240" placeholder="In a sentence or two, what is the thread running through what you do?">'
       + STORY.line.replace(/</g,'&lt;') + '</textarea>'
       + '<div class="ol-f"><button class="btn" onclick="saveLine()">Save</button>'
@@ -3106,43 +2935,27 @@ function renderOneline(){
     if (sub) sub.textContent = '· not there yet, and that is worth knowing';
     host.innerHTML =
         '<div class="ol-t empty">You do not have a story yet.</div>'
-      + '<div class="ol-n" style="margin-top:8px">'+storyGap()+'</div>'
+      + '<div class="ol-n" style="margin-top:8px">Log a couple of activities or honors, then rebuild -- a story needs a real thread to find.</div>'
       + '<div class="ol-f"><button class="btn" onclick="editLine()">Write one</button>'
-      + '<span class="ol-n">Or add to your profile and we will draft one for you.</span></div>';
+      + '<button class="ghost" onclick="rebuildLine()">'+rebuildLabel()+'</button>'
+      + '<span class="ol-n">Or add to your profile and rebuild, and we will draft one for you.</span></div>';
     return;
   }
 
   if (sub) sub.textContent = '· the angle everything else points at';
   const from = STORY.from.length
     ? '<div class="builtfrom"><b>Built from</b>'
-      + STORY.from.map(f=>'<span class="bf">'+f+'</span>').join('') + '</div>'
+      + STORY.from.map(f=>'<span class="bf">'+escHtml(f)+'</span>').join('') + '</div>'
     : '';
   host.innerHTML =
-      '<div class="spike">◆ '+STORY.spike+'</div>'
-    + '<div class="ol-t">'+STORY.line+'</div>'
+      '<div class="spike">◆ '+escHtml(STORY.spike)+'</div>'
+    + '<div class="ol-t">'+escHtml(STORY.line)+'</div>'
     + from
     + '<div class="ol-f"><button class="ghost" onclick="editLine()">Edit</button>'
-    + (STORY.byStudent
-        ? '<button class="ghost" onclick="rebuildLine()">Rebuild from my profile</button>'
-        : '')
+    + '<button class="ghost" onclick="rebuildLine()">'+rebuildLabel()+'</button>'
     + '<span class="ol-n">'+(STORY.byStudent
         ? 'Written by you.'
-        : 'Drafted from the entries above. Make it yours.')+'</span></div>';
-}
-/* Their words win until they ask for ours back. */
-function rebuildLine(){
-  STORY.byStudent = false; refreshStory();
-  renderOneline(); renderStory(); toast('Rebuilt from your profile');
-}
-function editLine(){ editingLine = true; renderOneline(); }
-function cancelLine(){ editingLine = false; renderOneline(); }
-function saveLine(){
-  const v = (document.getElementById('ol-in').value||'').trim();
-  STORY.line = v;
-  STORY.byStudent = !!v;
-  editingLine = false;
-  renderOneline(); renderStory();   /* the pillar footer depends on there being a story */
-  toast(v ? 'Your story saved' : 'Story cleared');
+        : 'Drafted from your profile. Make it yours.')+'</span></div>';
 }
 
 function renderStory(){
@@ -3197,9 +3010,10 @@ function addFromSkill(name){
   toast('Added "'+name+'" to your plan');
 }
 
-function renderGrowth(){ refreshStory(); renderMomentum(); renderNudges(); renderOneline(); renderStory(); }
+function renderGrowth(){ renderMomentum(); renderNudges(); renderOneline(); renderStory(); }
 bootDone = true;
 renderGrowth();
+loadStory();
 
 function fold(id){ document.getElementById(id).classList.toggle('closed'); }
 let tt;

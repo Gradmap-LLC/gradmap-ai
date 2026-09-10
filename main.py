@@ -35,6 +35,7 @@ from recommend import (
     recommendations,
     update_recommendation_status,
 )
+from story import get_story, rebuild_story, save_edited_line
 
 
 GOOGLE_CALENDAR_EVENT_URL = "https://calendar.google.com/calendar/render"
@@ -1005,6 +1006,33 @@ def google_calendar_sync(student_id: str, body: GoogleCalendarSyncRequest):
     except GoogleNotConnectedError:
         raise HTTPException(status_code=409, detail="Google Calendar is not connected for this student")
     return {"synced": len(body.items)}
+
+
+# --- "Your story" -------------------------------------------------------
+# Unlike recommendations, this never regenerates itself -- only an explicit
+# rebuild call reaches the LLM, and that's capped server-side (story.py).
+
+@app.get("/students/{student_id}/story")
+def get_story_endpoint(student_id: str):
+    return get_story(student_id)
+
+
+@app.post("/students/{student_id}/story/rebuild")
+def rebuild_story_endpoint(student_id: str):
+    try:
+        student = _fetch_student_snapshot(student_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    return rebuild_story(student_id, student)
+
+
+class StoryEditRequest(BaseModel):
+    line: str
+
+
+@app.patch("/students/{student_id}/story")
+def edit_story_endpoint(student_id: str, body: StoryEditRequest):
+    return save_edited_line(student_id, body.line)
 
 
 def main():
