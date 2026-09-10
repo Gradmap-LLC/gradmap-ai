@@ -2070,7 +2070,7 @@ async function loadSuggestions(){
   try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations`); }
   catch (e) { toast('Could not load suggestions'); return; }
   SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
-  renderSugs(); renderSugPage();
+  renderSugs(); renderSugPage(); renderNudges();
 }
 
 /* The dashboard card and the Suggestions screen render the same sugCard.
@@ -2102,7 +2102,7 @@ async function addSug(id){
   } catch (e) { toast('Could not add that, try again'); return; }
   TASKS.push({id:Date.now(), t:s.title, cat:s.cat, yr:'now', why:s.why,
               hard:'', target:'', est:s.est, st:'not_started', grade:'11th'});
-  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderTasks(); toast('Added "'+s.title+'" to your plan');
+  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); renderTasks(); toast('Added "'+s.title+'" to your plan');
 }
 /* Snooze is local-only -- there's no "snoozed" state in the backend, so this
    just hides the card for the rest of the session; it reappears next time
@@ -2110,7 +2110,7 @@ async function addSug(id){
 function snoozeSug(id){
   const s = SUGS.find(x=>x.id===id);
   if (!s) return;
-  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); toast('Snoozed');
+  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Snoozed');
 }
 /* Dismiss persists: the row is marked dismissed server-side (not deleted),
    so it stays gone across reloads and no longer counts toward the
@@ -2121,7 +2121,7 @@ async function dismissSug(id){
   if (!s) return;
   try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${id}/dismiss`, {method:'POST'}); }
   catch (e) { toast('Could not dismiss that, try again'); return; }
-  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); toast('Dismissed');
+  SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Dismissed');
 }
 loadSuggestions();
 
@@ -2430,7 +2430,7 @@ async function suggestMore(){
   } catch (e) { toast('Could not get a new suggestion, try again'); return; }
   if (!data.generated){ toast('You have plenty of open suggestions already, finish a few first'); return; }
   SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
-  renderSugPage(); renderSugs(); toast('New suggestion added');
+  renderSugPage(); renderSugs(); renderNudges(); toast('New suggestion added');
 }
 function sugCard(s){
   const estBit  = hasEst(s) ? `<span class="est">Est. ${escHtml(s.est)}</span>`
@@ -2826,27 +2826,19 @@ function renderMomentum(){
     + '<div class="u-n">'+o+'% there'+(behind.length?', '+behind.length+' section'+(behind.length===1?'':'s')+' to go':'')+'</div>';
 }
 
-/* Your next move: each nudge names the skill and where that skill lives. */
+/* Your next move: a live preview of the 3 most important open suggestions --
+   SUGS is already the real, backend-sorted-by-urgency list (see
+   loadSuggestions), so "most important" is just its first 3. Keep this in
+   sync with anything that changes SUGS (loadSuggestions/addSug/dismissSug/
+   snoozeSug/suggestMore all call this too). */
 function renderNudges(){
-  const N = [];
-  if (sectionPct('activities') < READY_AT)
-    N.push({tag:'Grow your story', soft:false,
-            w:'Your robotics story needs one standout project.',
-            sub:'Passion project skill · lives on Activities and Major Interests',
-            btn:'Get 3 ideas ✦', fn:"openSkill('passion')"});
-  N.push({tag:'Quick win', soft:false,
-          w:'5 activities added, 2 still need wording.',
-          sub:'Polish skill · lives inline on each Activities entry',
-          btn:'Polish them ✎', fn:"toast('Opens: Polish an activity')"});
-  if (sectionPct('tests') < READY_AT)
-    N.push({tag:'Do not miss', soft:true,
-            w:'No test date on your calendar yet.',
-            sub:'Testing timeline · lives on the Tests screen',
-            btn:'Add a test date', fn:"toast('Opens: Tests')"});
-  document.getElementById('nudges').innerHTML = N.slice(0,3).map(n=>
-    '<div class="nudge'+(n.soft?' soft':'')+'"><span class="tagq">'+n.tag+'</span>'
-   +'<div class="nw">'+n.w+'</div><div class="nsub">'+n.sub+'</div>'
-   +'<button class="go" onclick="'+n.fn+'">'+n.btn+'</button></div>').join('');
+  const top3 = SUGS.slice(0,3);
+  document.getElementById('nudges').innerHTML = top3.length
+    ? top3.map(n=>
+        '<div class="nudge"><span class="tagq">'+escHtml(n.cat)+'</span>'
+       +'<div class="nw">'+escHtml(n.title)+'</div><div class="nsub">'+escHtml(n.why||'')+'</div>'
+       +'<button class="go" onclick="addSug('+n.id+')">Add to my tasks</button></div>').join('')
+    : '<div class="nsub">Nothing outstanding right now. Nice work.</div>';
 }
 
 /* Story pillars: the same inputs as Road to CAM, read as depth.
