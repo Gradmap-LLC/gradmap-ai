@@ -34,7 +34,7 @@ ALLOWED_CATEGORIES = (
 
 ALLOWED_URGENCY_RANKS = ("due_soon", "coming_up", "later")
 
-ALLOWED_STATUSES = ("not_started", "in_progress", "done")
+ALLOWED_STATUSES = ("not_started", "in_progress", "done", "snoozed")
 
 DEFAULT_ESTIMATED_TIME = "30 min"
 
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS student_recommendations (
     link TEXT,
     estimated_time TEXT,
     previous_urgency_rank TEXT,
-    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'done')),
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'done', 'snoozed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
@@ -63,7 +63,27 @@ ALTER TABLE student_recommendations
     ADD COLUMN IF NOT EXISTS previous_urgency_rank TEXT,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     ADD COLUMN IF NOT EXISTS google_calendar TEXT,
-    ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT false
+    ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS target_date DATE
+"""
+
+# The table's original CHECK constraint (from CREATE_STUDENT_RECOMMENDATIONS_TABLE_SQL)
+# didn't include 'snoozed'; a plain ADD COLUMN migration can't widen it, so it has to
+# be dropped and recreated. Postgres's default name for an inline single-column CHECK
+# is "<table>_<column>_check".
+DROP_STATUS_CHECK_SQL = """
+ALTER TABLE student_recommendations DROP CONSTRAINT IF EXISTS student_recommendations_status_check
+"""
+
+ADD_STATUS_CHECK_SQL = """
+ALTER TABLE student_recommendations ADD CONSTRAINT student_recommendations_status_check
+    CHECK (status IN ('not_started', 'in_progress', 'done', 'snoozed'))
+"""
+
+GET_STATUS_CHECK_DEFINITION_SQL = """
+SELECT pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conname = 'student_recommendations_status_check'
 """
 
 
@@ -123,12 +143,19 @@ ORDER BY created_at
 
 
 FETCH_ALL_RECOMMENDATIONS_SQL = """
-SELECT id, urgency_rank, category, title, subtext, link, estimated_time, status, google_calendar
+SELECT id, urgency_rank, category, title, subtext, link, estimated_time, status, google_calendar, target_date
 FROM student_recommendations
 WHERE student_id = %s AND dismissed = false
 ORDER BY
     CASE urgency_rank WHEN 'due_soon' THEN 0 WHEN 'coming_up' THEN 1 WHEN 'later' THEN 2 ELSE 3 END,
     created_at
+"""
+
+SET_RECOMMENDATION_TARGET_DATE_SQL = """
+UPDATE student_recommendations
+SET target_date = %(target_date)s, updated_at = now()
+WHERE id = %(id)s AND student_id = %(student_id)s
+RETURNING id, target_date
 """
 
 
@@ -155,10 +182,19 @@ RETURNING id, title, dismissed
 
 
 def ensure_student_recommendations_table():
-    with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
             cursor.execute(CREATE_STUDENT_RECOMMENDATIONS_TABLE_SQL)
             cursor.execute(ADD_STUDENT_RECOMMENDATIONS_COLUMNS_SQL)
+
+            # This runs on nearly every request, so only actually touch the
+            # constraint (DROP+ADD, unlike ADD COLUMN IF NOT EXISTS, isn't a
+            # cheap no-op) the first time it's missing 'snoozed'.
+            cursor.execute(GET_STATUS_CHECK_DEFINITION_SQL)
+            row = cursor.fetchone()
+            if row is None or "snoozed" not in row["definition"]:
+                cursor.execute(DROP_STATUS_CHECK_SQL)
+                cursor.execute(ADD_STATUS_CHECK_SQL)
 
 
 def _store_recommendation(student_id, recommendation):
@@ -198,6 +234,19 @@ def update_recommendation_status(student_id, recommendation_id, status):
             cursor.execute(
                 UPDATE_RECOMMENDATION_STATUS_SQL,
                 {"status": status, "id": recommendation_id, "student_id": student_id},
+            )
+            return cursor.fetchone()
+
+
+def set_recommendation_target_date(student_id, recommendation_id, target_date):
+    """target_date: an ISO date string ('YYYY-MM-DD'), or None to clear it.
+    Student-set only -- the LLM never proposes a target_date, only urgency_rank."""
+    ensure_student_recommendations_table()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                SET_RECOMMENDATION_TARGET_DATE_SQL,
+                {"target_date": target_date, "id": recommendation_id, "student_id": student_id},
             )
             return cursor.fetchone()
 

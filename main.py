@@ -41,6 +41,7 @@ from recommend import (
     fetch_all_recommendations,
     fetch_recommendation,
     recommendations,
+    set_recommendation_target_date,
     update_recommendation_status,
 )
 from story import get_story, rebuild_story, save_edited_line
@@ -922,6 +923,19 @@ def set_recommendation_status(student_id: str, recommendation_id: int, body: Rec
 
     updated_id, status, urgency_rank = result
     return {"id": updated_id, "status": status, "urgency_rank": urgency_rank}
+
+
+class RecommendationTargetDateUpdate(BaseModel):
+    target_date: str | None = None  # 'YYYY-MM-DD', or null to clear it
+
+
+@app.patch("/students/{student_id}/recommendations/{recommendation_id}/target-date")
+def set_recommendation_target_date_endpoint(student_id: str, recommendation_id: int, body: RecommendationTargetDateUpdate):
+    result = set_recommendation_target_date(student_id, recommendation_id, body.target_date)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    return {"id": result["id"], "target_date": str(result["target_date"]) if result["target_date"] else None}
 
 
 @app.get("/students/{student_id}/recommendations/{recommendation_id}/calendar-link")

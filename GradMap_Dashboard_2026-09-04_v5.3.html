@@ -1154,17 +1154,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
       <div class="card" id="calcard">
         <div class="bd">
           <div class="calrow" id="calrow">
-            <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--accent)"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
-            <div class="t">
-              <b>Connect your calendar</b>
-              <div>Your deadlines and the target dates you set get pushed to Google, Apple, or Outlook.</div>
-            </div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap">
-              <button class="pillbtn" onclick="connectCal('Google')">Google</button>
-              <button class="pillbtn" onclick="connectCal('Apple')">Apple</button>
-              <button class="pillbtn" onclick="connectCal('Outlook')">Outlook</button>
-              <button class="pillbtn" onclick="showScreen('calendar')">See calendar &rarr;</button>
-            </div>
+            <div class="t"><b>Checking your calendar connection&hellip;</b></div>
           </div>
         </div>
       </div>
@@ -1181,11 +1171,6 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
           <div class="budget">
             <div class="t" id="budget-txt"></div>
             <div class="dots" id="budget-dots"></div>
-            <select id="more-yr" class="fchip" style="border-radius:var(--r-ctl);padding:8px 11px">
-              <option value="now">for this year</option>
-              <option value="next">for next year</option>
-              <option value="later">for later</option>
-            </select>
             <button class="ghost" id="more-btn" onclick="askMore()">Suggest my next task</button>
           </div>
 
@@ -1205,7 +1190,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
                 <option value="">Open</option>
                 <option value="in_progress">In progress</option>
                 <option value="not_started">Not started</option>
-                <option value="snooze">Snoozed</option>
+                <option value="snoozed">Snoozed</option>
                 <option value="done">Done</option>
                 <option value="all">Everything</option>
               </select></label>
@@ -1338,7 +1323,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
               <option value="upcoming_events">Upcoming Events</option>
               <option value="letters_of_recommendation">Letters of Recommendation</option>
             </select>
-            <button class="btn" onclick="suggestMore()">Suggest something</button>
+            <button class="btn" id="sug-more-btn" onclick="suggestMore()">Suggest something</button>
           </div>
         </div></div>
         <div class="fbar">
@@ -1800,84 +1785,20 @@ checkAppleCalendarStatus();
 const CAP = 12;                // max active tasks at once (tunable)
 const REFILL_AT = 4;           // auto-refill when active drops to this
 
-let TASKS = [
-  {id:0, t:'Add your role and hours to Robotics Club', cat:'Activities', sub:'Activity Detail', yr:'now',
-   req:{by:'Ms. Reyes', on:'Aug 28', section:'activities'},
-   why:'Your counselor cannot verify Activities & Honors without a role and an hours figure on each entry.',
-   hard:'', target:'', est:'10 min', st:'not_started', grade:'11th · fall',
-   how:{steps:['Open Activities & Honors','Find Robotics Club','Add your role in 50 characters or fewer, which is the Common App limit','Add hours per week and weeks per year as you actually did them'],
-     where:'GradMap · Activities & Honors', done:'The entry has a role and both hour fields filled in.'}},
-  {id:1, t:'Register for the October SAT', cat:'Testing', yr:'now',
-   why:'You listed testing prep at intake but there is no sitting booked.',
-   hard:'Deadline · Sep 20', target:'Sep 12', est:'30 min', st:'not_started', grade:'11th · fall',
-   how:{steps:['Make a College Board account if you do not have one','Pick the October date and a test centre near you','Pay or apply the fee waiver your counselor can give you','Put the date in your calendar the moment you get the confirmation'],
-     where:'collegeboard.org', done:'A confirmation email with a date and a test centre on it.'}},
-  {id:2, t:'Write the description for your food bank volunteering', cat:'Activities', yr:'now',
-   why:'The entry has hours on it but no description, and the description is what a reader actually sees.',
-   hard:'', target:'', est:'10 min', st:'done', grade:'11th',
-   how:{steps:['Open Activities and Honors','Say what you did, not what the organisation does','Put one real number in it if you have one','Keep it under 150 characters so it carries to Common App'],
-     where:'GradMap · Activities & Honors', done:'The entry has a description under the limit.'}},
-  {id:3, t:'Submit the RSI summer program application', cat:'Student Development', yr:'now',
-   why:'Added from a suggestion. The window closes this month.',
-   /* Summer programs are a second application track, not a special
-      case. The item lives in the one plan and the one calendar; the
-      source tells the student where the work actually happens, and
-      the unverified flag is honest about who typed the date.        */
-   source:'summer_program', deadline_verified:false,
-   hard:'Deadline · Oct 4', target:'Sep 25', est:'2 hrs', st:'in_progress', grade:'11th',
-   how:{steps:['Read the eligibility page before anything else, it rules a lot of people out','Draft the short answers in a doc first, not in the form','Ask one teacher for the recommendation at least three weeks out','Submit two days early, the site slows down at the deadline'],
-     where:'the program website', done:'A submitted confirmation, and the recommendation marked received.'}},
-  {id:4, t:'Enter your junior spring grades', cat:'Courses & Grades', yr:'now',
-   why:'Your GPA and every suggestion below get sharper once this is in.',
-   hard:'', target:'', est:'15 min', st:'not_started', grade:'11th',
-   how:{steps:['Get your report card or unofficial transcript','Open Courses and Grades and pick the right grade year tab','Enter each course from your school list, do not free type it','Save, then check your GPA at the top updated'],
-     where:'GradMap · Courses & Grades', done:'Spring term shows every course with a grade, and the GPA moved.'}},
-  {id:5, t:'Meet your counselor about senior-year courses', cat:'Academic', yr:'now',
-   why:'Course-selection windows close before spring.',
-   hard:'', target:'Oct 1', est:'20 min', st:'done', grade:'11th · spring',
-   how:{steps:['Book the meeting before course selection opens, not after','Bring your intended majors and the courses you are considering','Ask which courses your school weights, it is not always obvious','Write down what they say the same day'],
-     where:'your high school counseling office', done:'A senior year course plan you both agree on.'}},
-  {id:6, t:'Grow your college list to 8–12 schools', cat:'College Prep', yr:'now',
-   why:'You have 4 saved. A fuller list gives you room to balance it later.',
-   hard:'', target:'', est:'1 hr', st:'in_progress', grade:'11th–12th',
-   how:{steps:['Add schools you are curious about, not only ones you have heard of','Use the groups to keep it balanced rather than picking all one kind','Note one specific reason for each, a program or a place','Stop at 12, you can cut later'],
-     where:'GradMap · Colleges', done:'Between 8 and 12 saved, each with a reason you wrote yourself.'}},
-  {id:7, t:'Ask two teachers for letters of recommendation', cat:'College Applications', yr:'next',
-   why:'Teachers write stronger letters with three or more weeks of notice.',
-   hard:'', target:'', est:'15 min', st:'not_started', grade:'11th · spring',
-   how:{steps:['Pick two teachers from core subjects who know you, not the easiest graders','Ask in person, then follow up in writing','Give them your resume and a short note on what you hope they mention','Give them at least three weeks, more if you can'],
-     where:'in person, then GradMap · Recommendations', done:'Two teachers have said yes and have your materials.'}},
-  {id:8, t:'Explore FAFSA basics with a parent', cat:'Financial Aid', yr:'next',
-   why:'Getting familiar early avoids the October rush.',
-   hard:'', target:'', est:'1 hr', st:'not_started', grade:'12th · fall',
-   how:{steps:['Sit down with a parent, this one is not a solo task','Create your FSA ID early, it takes a few days to verify','Gather the tax year documents the form asks for','Fill it as soon as it opens, some aid is first come'],
-     where:'studentaid.gov', done:'FSA IDs created for both of you and the documents in one folder.'}},
-  {id:10, t:'Research careers and majors', cat:'Student Development', sub:'Career Exploration', yr:'now',
-   why:'From your grade-11 plan. Narrow to 10–15 careers and 2–4 majors, then build activities around them.',
-   hard:'', target:'', est:'', st:'not_started', grade:'11th · fall',
-   how:{steps:['Start from what you like doing, not from job titles you already know','Write down 10 to 15 that you would not mind reading about','Cut the ones you would not want on a Tuesday morning','Keep the list, you will use it for the major step'],
-     where:'GradMap · Careers & Majors', done:'A written list of 10 to 15 careers you can explain.'}},
-  {id:11, t:'Explore college-specific major offerings', cat:'College Prep', sub:'Major Exploration', yr:'now',
-   why:'The same major is built differently at every school. That is what makes a Why-Major essay specific.',
-   hard:'', target:'', est:'', st:'not_started', grade:'11th · winter',
-   how:{steps:['Take your 2 or 3 majors and pick four schools you are curious about','Open each major page and read the actual first two years of courses','Note one thing at each school that the others do not have','Write one sentence per school on why it fits you'],
-     where:'each college website, major or department page', done:'Four sentences you could paste into a Why Major essay.'}},
-  {id:12, t:'Run your GPA forecast for senior year', cat:'GradMap Profile', sub:'GPA Forecasting', yr:'now',
-   why:'Shows what your GPA becomes under the courses you are planning, before you commit to them.',
-   hard:'', target:'', est:'20 min', st:'not_started', grade:'11th · spring',
-   how:{steps:['Enter the courses you are planning for senior year','Set the grade you realistically expect, not the one you hope for','Look at what the forecast does to your weighted and unweighted GPA','Change one course and look again, that is the point of it'],
-     where:'GradMap · Courses & Grades · GPA forecast', done:'You know what senior year does to your GPA before you commit to it.'}},
-  {id:9, t:'Commit to a college and submit your deposit', cat:'Post-Applications', yr:'later',
-   why:'After decisions arrive, lock in your choice.',
-   hard:'Deadline · May 1', target:'', est:'30 min', st:'not_started', grade:'12th · spring',
-   how:{steps:['Compare your offers on cost, not on name','Talk to the family about what is actually affordable','Visit or revisit if you can before deciding','Submit the deposit before May 1 and decline the others'],
-     where:'each school portal', done:'Deposit submitted and the other schools declined.'}}
-];
+/* Populated from real student_recommendations rows by loadRecommendations()
+   (status != not_started = a My Plan task), plus whatever Quick Add/askMore/
+   the calendar's "add as task" push in locally (those aren't backend-tracked
+   tasks -- see the fromRecommendation note on mapTaskFromRecommendation). */
+let TASKS = [];
 
+/* 'later' is the Done bucket: any completed task lands here regardless of
+   its yr, and This year/Next year never show a done task -- see the
+   bucketFilter branch in renderTasks(). Key kept as 'later' (not 'done') so
+   the existing camRow/openYears/foldYear plumbing didn't need touching. */
 const YEARS = [
   {key:'now',   name:'This year · 11th grade', now:true,  open:true},
   {key:'next',  name:'Next year · 12th grade', now:false, open:false},
-  {key:'later', name:'Later',                  now:false, open:false}
+  {key:'later', name:'Done',                   now:false, open:false}
 ];
 const openYears = new Set(['now']);
 
@@ -1885,7 +1806,7 @@ const CAL_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" str
 const LOCK_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-1px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const PERSON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px;flex:none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
-function activeCount(){ return TASKS.filter(t=>t.st!=='done' && t.st!=='snooze').length; }
+function activeCount(){ return TASKS.filter(t=>t.st!=='done' && t.st!=='snoozed').length; }
 
 /* "1 hr 30 min" -> 90. Unknown or "varies" sorts to the long end. */
 /* Bands and minutes both live in `est`. Only a sized task can be filtered by time. */
@@ -1911,20 +1832,32 @@ function renderBudget(){
   /* Only sized tasks can be summed. Say what the total covers rather than
      presenting a partial number as if it were the whole plan. A confidently
      wrong number is worse than no number.                                     */
-  const live   = TASKS.filter(t=>t.st!=='done' && t.st!=='snooze');
+  const live   = TASKS.filter(t=>t.st!=='done' && t.st!=='snoozed');
   const sized  = live.filter(t=>hasEst(t) && estMinutes(t.est)<999);
   const mins   = sized.reduce((a,t)=>a+estMinutes(t.est),0);
   const cover  = live.length ? sized.length/live.length : 1;
   const timeBit = !sized.length ? ''
     : cover >= 0.8 ? ` roughly <b>${fmtMins(mins)}</b> of work left.`
     : ` <b>${fmtMins(mins)}</b> across the ${sized.length} with a time on them.`;
-  document.getElementById('budget-txt').innerHTML = active >= CAP
-    ? `<b>Your plan is full. ${active} of ${CAP} active.</b> Finish a couple before adding more, so this list stays something you can actually get through.`
-    : `<b>${active} of ${CAP} active tasks</b>,${timeBit}${
-        done ? ` ${done} finished and filed under Done.` : ''
-      } New recommendations arrive automatically once you drop to ${REFILL_AT}.`;
-  document.getElementById('budget-dots').innerHTML =
-    Array.from({length:CAP},(_,i)=>`<span class="dot ${i<active?'on':(i<active+done?'done':'')}"></span>`).join('');
+  /* CAP (12) is still the real ceiling used everywhere else to gate adding
+     more -- it's a design limit, not a promise that 12 slots exist. The "of"
+     shown here is just what's actually in the plan right now, so 1 real
+     task reads as "1 of 1", not a confusing "1 of 12". Done tasks live in
+     their own bucket now and don't count toward "active" at all -- neither
+     the numerator nor the denominator. */
+  const total = TASKS.filter(t=>t.st!=='done').length;
+  if (!total && !done){
+    document.getElementById('budget-txt').innerHTML = `<b>Nothing in your plan yet.</b> Add a suggestion or your own task to get started.`;
+    document.getElementById('budget-dots').innerHTML = '';
+  } else {
+    document.getElementById('budget-txt').innerHTML = active >= CAP
+      ? `<b>Your plan is full. ${active} of ${total} active.</b> Finish a couple before adding more, so this list stays something you can actually get through.`
+      : `<b>${active} of ${total} active tasks</b>,${timeBit}${
+          done ? ` ${done} finished and filed under Done.` : ''
+        } New recommendations arrive automatically once you drop to ${REFILL_AT}.`;
+    document.getElementById('budget-dots').innerHTML =
+      Array.from({length:total},(_,i)=>`<span class="dot ${i<active?'on':''}"></span>`).join('');
+  }
   const btn = document.getElementById('more-btn');
   btn.disabled = active >= CAP;
   btn.textContent = active >= CAP ? 'Plan is full, finish one first' : 'Suggest my next task';
@@ -1956,9 +1889,9 @@ function taskHTML(t){
             </span>`;
   if (calConnected && (t.hard || t.target)) dates += `<span class="oncal">${CAL_SVG} On your calendar</span>`;
 
-  const cls = t.st==='done' ? 'fin' : t.st==='in_progress' ? 'act' : t.st==='snooze' ? 'snz' : '';
+  const cls = t.st==='done' ? 'fin' : t.st==='in_progress' ? 'act' : t.st==='snoozed' ? 'snz' : '';
   const flag = t.st==='in_progress' ? '<span class="tstate">In progress</span>'
-             : t.st==='snooze' ? '<span class="tstate snz">Snoozed</span>' : '';
+             : t.st==='snoozed' ? '<span class="tstate snz">Snoozed</span>' : '';
   const src = SOURCES[t.source];
   const srcChip = src
     ? `<span class="srcchip" onclick="event.stopPropagation();toast('Opens: ${src.opens}')">${src.label} ↗</span>`
@@ -1971,10 +1904,10 @@ function taskHTML(t){
   return `<div class="task ${cls}${t.req?' req':''}">
     <div class="cb ${t.st==='done'?'on':''}" onclick="toggle(${t.id})"></div>
     <div class="tmain">
-      <div class="ttitle">${t.t} ${flag}</div>
-      <div class="trow"><span class="chip">${t.cat}</span>${t.sub?`<span class="chip">${t.sub}</span>`:''}${srcChip}${hasEst(t)?`<span class="est">${t.est}</span>`:'<span class="est unsized">no estimate yet</span>'}</div>
+      <div class="ttitle">${escHtml(t.t)} ${flag}</div>
+      <div class="trow"><span class="chip">${escHtml(t.cat)}</span>${t.sub?`<span class="chip">${escHtml(t.sub)}</span>`:''}${srcChip}${hasEst(t)?`<span class="est">${escHtml(t.est)}</span>`:'<span class="est unsized">no estimate yet</span>'}</div>
       ${reqLine}
-      <div class="why">${t.why}</div>
+      <div class="why">${escHtml(t.why)}</div>
       ${t.how?`<button class="howbtn" onclick="toggleHow(this)">How do I do this?</button>
       <div class="how">
         <ol>${t.how.steps.map(x=>`<li>${x}</li>`).join('')}</ol>
@@ -1988,15 +1921,12 @@ function taskHTML(t){
         <option value="not_started" ${t.st==='not_started'?'selected':''}>Not started</option>
         <option value="in_progress" ${t.st==='in_progress'?'selected':''}>In progress</option>
         <option value="done" ${t.st==='done'?'selected':''}>Done</option>
-        ${t.req?'':`<option value="snooze" ${t.st==='snooze'?'selected':''}>Snooze</option>`}
+        ${t.req?'':`<option value="snoozed" ${t.st==='snoozed'?'selected':''}>Snooze</option>`}
       </select>
     </div>
   </div>`;
 }
 
-/* tasks completed in this session, kept on screen until the student leaves the
-   list or clears them, so finishing something is visible and reversible */
-const justDone = new Set();
 const ST_ORDER = {in_progress:0, not_started:1, snooze:2, done:3};
 function sortTasks(rows, how){
   /* A counselor request was not generated and was not chosen, so it sits above
@@ -2027,32 +1957,32 @@ function renderTasks(){
   syncCatOptions();
   const val = id => { const e=document.getElementById(id); return e?e.value:''; };
   const fit = +(val('timefit')||0), fcat = val('c-cat'), fst = val('c-status'), how = val('c-sort')||'deadline';
-  /* A finished task leaves the list. It is not gone, it is one filter away.
-     The exception is a task finished in this session: it stays visible so the
-     student can see it land and undo it if they mis-tapped.                    */
   /* A time filter may only exclude what it can judge. A task with no estimate
      always shows: hiding work because nobody has sized it yet is how a student
      loses track of it. 103 of the 342 seed rows are not sized, so this is the
      normal case, not the edge case.                                            */
   const timeFits = t => !fit || !hasEst(t) ||
         estMinutes(t.est) <= fit || (fit>=120 && estMinutes(t.est)>=120);
-  const statusFits = t =>
-      fst === 'all'  ? true
-    : fst === ''     ? (t.st !== 'done' || justDone.has(t.id))
-    :                  t.st === fst;
+  const statusFits = t => fst === 'all' ? true : fst === '' ? t.st !== 'done' : t.st === fst;
   const fits = t => timeFits(t) && (!fcat || t.cat===fcat) && statusFits(t);
   const note=document.getElementById('fit-note');
   if(note){
     const n=TASKS.filter(fits).length;
     note.textContent = (fit||fcat||fst) ? `${n} of ${TASKS.length} shown` : '';
   }
+  /* Done bucket: every completed task, regardless of yr, always shown there
+     (the "Open" default status filter still hides done from This year/Next
+     year, but it's not what hides them from Done -- an explicit non-done
+     status filter is the only thing that can empty the Done bucket).       */
+  const bucketOf = t => t.st==='done' ? 'later' : t.yr;
   document.getElementById('years').innerHTML = YEARS.map(y=>{
-    const rows = sortTasks(TASKS.filter(t=>t.yr===y.key && fits(t)), how);
-    const hiddenDone = TASKS.filter(t=>t.yr===y.key && t.st==='done' && !justDone.has(t.id)).length;
+    const bucketFits = t => timeFits(t) && (!fcat || t.cat===fcat) &&
+      (y.key==='later' ? (fst==='' || fst==='all' || t.st===fst) : statusFits(t));
+    const rows = sortTasks(TASKS.filter(t=>bucketOf(t)===y.key && bucketFits(t)), how);
     const open = openYears.has(y.key);
     const body = rows.length ? rows.map(taskHTML).join('')
                              : '<div class="why" style="padding:14px 18px">'+((fit||fcat||fst)?'Nothing here matches those filters.':'Nothing here yet.')+'</div>';
-    const camRow = y.key==='next' || y.key==='later'
+    const camRow = y.key==='next'
       ? `<div class="task" style="border-top:1px solid var(--line)">
            <div class="tmain"><div class="why" style="margin:0">
              Essays, recommenders and school-by-school requirements for this year live in
@@ -2063,8 +1993,6 @@ function renderTasks(){
         <svg class="chev" viewBox="0 0 24 24" style="${open?'':'transform:rotate(-90deg)'}"><path d="M6 9l6 6 6-6"/></svg>
         <span class="name">${y.name}</span>
         ${y.now?'<span class="now">YOU ARE HERE</span>':''}
-        ${hiddenDone && !fst ? `<button class="showdone" onclick="event.stopPropagation();showDone()">
-             ${hiddenDone} done${y.key==='now'?' this year':''}</button>` : ''}
         <span class="cnt">${rows.length} task${rows.length===1?'':'s'}</span>
       </div>
       <div class="yrbd">${body}${camRow}</div>
@@ -2075,50 +2003,72 @@ function renderTasks(){
 }
 
 function toggleHow(b){ b.classList.toggle('on'); b.nextElementSibling.classList.toggle('on'); }
-/* One mechanism, not two. The chip sets the filter the student could have set. */
-function showDone(){ const s=document.getElementById('c-status'); if(s){ s.value='done'; renderTasks(); } }
 function foldYear(k){ openYears.has(k)?openYears.delete(k):openYears.add(k); renderTasks(); }
-function setStatus(id,v){ const t=TASKS.find(x=>x.id===id); t.st=v;
-  if(v==='done') justDone.add(id); else justDone.delete(id);
+/* Quick Add/askMore/calendar-added tasks have no backend row (fromRecommendation
+   falsy) -- these PATCH calls are only meaningful, and only attempted, for
+   tasks that actually came from a recommendation. */
+async function patchTaskStatus(t, status){
+  if (!t.fromRecommendation) return;
+  try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${t.id}`, {method:'PATCH', body: JSON.stringify({status})}); }
+  catch (e) { toast('Could not save that status, try again'); }
+}
+async function patchTaskTargetDate(t, isoDate){
+  if (!t.fromRecommendation) return;
+  try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${t.id}/target-date`, {method:'PATCH', body: JSON.stringify({target_date: isoDate})}); }
+  catch (e) { toast('Could not save the date, try again'); }
+}
+/* Setting status back to not_started on a recommendation-backed task means
+   the student isn't working on it after all -- it belongs back in Suggested
+   for you, not sitting in My Plan with nothing happening. Re-fetching (not
+   hand-patching SUGS locally) is deliberate: the task's local copy dropped
+   the raw category/urgency_rank/link fields when it was mapped for display,
+   so the real recommendation row is the only complete source of the truth. */
+async function moveBackToSuggestionsIfReverted(t){
+  if (t.st === 'not_started' && t.fromRecommendation) await loadRecommendations();
+}
+async function setStatus(id,v){ const t=TASKS.find(x=>x.id===id); t.st=v;
   renderTasks(); autoRefill();
+  await patchTaskStatus(t, v);
+  await moveBackToSuggestionsIfReverted(t);
   if(v==='done' && t.req) resolveRequest(t); else toast('Status saved'); }
-function toggle(id){ const t=TASKS.find(x=>x.id===id); t.st = t.st==='done'?'not_started':'done';
-  if(t.st==='done') justDone.add(id); else justDone.delete(id);
+async function toggle(id){ const t=TASKS.find(x=>x.id===id); t.st = t.st==='done'?'not_started':'done';
   renderTasks(); renderTimeline(); autoRefill();
+  await patchTaskStatus(t, t.st);
+  await moveBackToSuggestionsIfReverted(t);
   if(t.st==='done' && t.req) resolveRequest(t); }
 function pick(el){ const i=el.querySelector('input'); try{i.showPicker()}catch(e){i.click()} }
-function setTgt(i){
-  const label = new Date(i.value+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+async function setTgt(i){
+  const isoDate = i.value;
+  const label = new Date(isoDate+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
   i.parentNode.querySelector('.lbl').textContent = label;
   const t = TASKS.find(x=>x.id===Number(i.dataset.tid));
-  if (t) t.target = label;
+  if (t) { t.target = label; await patchTaskTargetDate(t, isoDate); }
   toast(calConnected?'Target date set and synced to your calendar':'Target date set');
   syncCalendar();
 }
-const NEXT_BY_YEAR = {
-  now:   {t:'Take a timed SAT practice section', cat:'Testing', sub:'SAT/ACT', est:'45 min', grade:'11th · fall',
-          why:'You asked for something for this year. A timed section builds stamina before your sitting.'},
-  next:  {t:'Draft your Common App personal statement', cat:'College Applications', sub:'Essays', est:'1 hr 30 min', grade:'12th · summer',
-          why:'You asked for something for next year. The personal statement is the one every school reads.'},
-  later: {t:'Compare financial aid offers side by side', cat:'Financial Aid', sub:'Comparing Offers', est:'1 hr', grade:'12th · spring',
-          why:'You asked for something further out. This is the decision that actually costs money.'}
-};
-function askMore(){
+/* "Suggest my next task" is the exact same action as the Suggestions
+   screen's "Suggest something" button (suggestMore(), below) -- it reads
+   whatever category that screen's scope picker is set to (default: none)
+   and calls the real /suggest endpoint. This only adds to SUGS, same as
+   suggestMore(): a fresh suggestion is something to consider, not
+   something silently added to the plan -- the student still has to Add it. */
+async function askMore(){
   if (activeCount() >= CAP) return;
-  const yr = document.getElementById('more-yr').value;
-  const seed = NEXT_BY_YEAR[yr];
-  TASKS.push({id:Date.now(), yr, hard:'', target:'', st:'not_started', ...seed});
-  if (!openYears.has(yr)) openYears.add(yr);
-  renderTasks(); renderTimeline();
-  toast('Added to ' + (yr==='now'?'this year':yr==='next'?'next year':'later'));
+  await suggestMore();
 }
-function autoRefill(){
-  if (activeCount() <= REFILL_AT){
-    TASKS.push({id:Date.now(), t:'Draft your "Why this major" paragraph', cat:'College Applications', yr:'now',
-      why:'Your list is getting short. This one carries into several supplements later.',
-      hard:'', target:'', est:'1 hr', st:'not_started', grade:'11th'});
-    renderTasks(); toast('You are running low, added a new recommendation');
-  }
+/* When the active plan runs low, top up real suggestions (not the plan
+   itself -- a fresh recommendation is something to consider, the student
+   still has to Add it) via the same /generate endpoint "Suggest something"
+   uses, respecting the same MAX_OUTSTANDING_RECOMMENDATIONS cap. */
+async function autoRefill(){
+  if (activeCount() > REFILL_AT) return;
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations/generate`, {method:'POST'}); }
+  catch (e) { return; }
+  if (!data.generated) return;
+  SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
+  renderSugs(); renderSugPage(); renderNudges();
+  toast('You are running low, added new suggestions');
 }
 renderTasks();
 
@@ -2151,16 +2101,31 @@ function mapRecommendation(r){
     link: r.link || null,
   };
 }
+function isoToDisplay(iso){ return new Date(iso+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+/* A recommendation the student has acted on (status != not_started) is a
+   My Plan task. fromRecommendation:true is how setTgt/saveTaskEdit/setStatus/
+   toggle know this task has a real row to PATCH back to, as opposed to a
+   Quick-Add/askMore/calendar-added task, which is still local-only. */
+function mapTaskFromRecommendation(r){
+  return {
+    id: r.id, t: r.title, cat: CATEGORY_LABELS[r.category] || 'General', why: r.subtext || '',
+    hard: '', target: r.target_date ? isoToDisplay(r.target_date) : '',
+    est: r.estimated_time || '', st: r.status, grade: '', yr: 'now', fromRecommendation: true,
+  };
+}
 
 let SUGS = [];
 /* Suggestions are student_recommendations rows with status='not_started';
-   'in_progress'/'done' means the student already acted on it (see addSug). */
-async function loadSuggestions(){
+   any other status means the student already acted on it (see addSug) --
+   those become My Plan tasks instead. One fetch drives both lists. */
+async function loadRecommendations(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations`); }
-  catch (e) { toast('Could not load suggestions'); return; }
+  catch (e) { toast('Could not load your suggestions and tasks'); return; }
   SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
+  TASKS = data.recommendations.filter(r => r.status !== 'not_started').map(mapTaskFromRecommendation);
   renderSugs(); renderSugPage(); renderNudges();
+  renderTasks(); renderTimeline(); renderCalendar();
 }
 
 /* The dashboard card and the Suggestions screen render the same sugCard.
@@ -2190,8 +2155,8 @@ async function addSug(id){
       method:'PATCH', body: JSON.stringify({status:'in_progress'}),
     });
   } catch (e) { toast('Could not add that, try again'); return; }
-  TASKS.push({id:Date.now(), t:s.title, cat:s.cat, yr:'now', why:s.why,
-              hard:'', target:'', est:s.est, st:'not_started', grade:'11th'});
+  TASKS.push({id:s.id, t:s.title, cat:s.cat, why:s.why,
+              hard:'', target:'', est:s.est, st:'in_progress', grade:'', yr:'now', fromRecommendation:true});
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); renderTasks(); toast('Added "'+s.title+'" to your plan');
 }
 /* Snooze is local-only -- there's no "snoozed" state in the backend, so this
@@ -2213,7 +2178,7 @@ async function dismissSug(id){
   catch (e) { toast('Could not dismiss that, try again'); return; }
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Dismissed');
 }
-loadSuggestions();
+loadRecommendations();
 
 
 /* ---------- 7. Quick add ----------
@@ -2419,8 +2384,8 @@ function renderTimeline(){
       html+=`<div class="season">${sn}</div><div class="tchips">`+
         sr.map(t=>{
           const dot = t.st==='done' ? 'dn' : (t.hard ? 'dl' : '');
-          return `<span class="tchip ${t.st==='done'?'done':''}" title="${t.cat}${t.hard?' · '+t.hard:''}">
-            <span class="cd ${dot}"></span><span class="ct">${t.t}</span></span>`;
+          return `<span class="tchip ${t.st==='done'?'done':''}" title="${escHtml(t.cat)}${t.hard?' · '+escHtml(t.hard):''}">
+            <span class="cd ${dot}"></span><span class="ct">${escHtml(t.t)}</span></span>`;
         }).join('')+`</div>`;
     });
     html+=`</div>`;
@@ -2498,8 +2463,8 @@ function renderCalendar(){
     const all=ev[d]||[];
     const rows=all.slice(0,2).map(e=>
       e[0]==='own'
-        ? `<div class="ev own" title="${e[1]} · click to edit" onclick="event.stopPropagation();openOwnEvent(${e[2]})">${e[1]}</div>`
-        : `<div class="ev ${e[0]==='hard'?'hard':'tgt'}" title="${e[1]} · click to edit" onclick="event.stopPropagation();openTaskEdit(${e[2]})">${e[1]}</div>`).join('');
+        ? `<div class="ev own" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openOwnEvent(${e[2]})">${escHtml(e[1])}</div>`
+        : `<div class="ev ${e[0]==='hard'?'hard':'tgt'}" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openTaskEdit(${e[2]})">${escHtml(e[1])}</div>`).join('');
     const nx=all[2]; const more=all.length>2?`<div class="evmore" onclick="event.stopPropagation();${nx[2]?`openTaskEdit(${nx[2]})`:''}">+${all.length-2} more</div>`:'';
     html+=`<div class="cell ${isThis&&d===NOW.getDate()?'today':''}" onclick="openEvent(${d})">
       <div class="dnum">${d}</div><span class="plusday">+</span>${rows}${more}</div>`;
@@ -2510,17 +2475,35 @@ function renderCalendar(){
 /* ---------- 11. Suggestions page ---------- */
 let sugf='all';
 function sugFilter(k){ sugf=k; document.querySelectorAll('[data-sf]').forEach(b=>b.classList.toggle('on', b.dataset.sf===k)); renderSugPage(); }
+/* Shared by both "Suggest something" (this screen) and "Suggest my next
+   task" (askMore(), My Plan -- it just calls this). suggestInFlight is the
+   real guard (a rapid double/triple-click must not fire a second request
+   while the first is still out); disabling the buttons is just the visible
+   half of that, so the cooldown reads as a cooldown, not an ignored click. */
+let suggestInFlight = false;
 async function suggestMore(){
-  const category = document.getElementById('sug-scope').value || null;
-  let data;
+  if (suggestInFlight) return;
+  suggestInFlight = true;
+  const moreBtn = document.getElementById('more-btn');
+  const sugBtn = document.getElementById('sug-more-btn');
+  if (moreBtn){ moreBtn.disabled = true; moreBtn.textContent = 'Thinking…'; }
+  if (sugBtn){ sugBtn.disabled = true; sugBtn.textContent = 'Thinking…'; }
   try {
-    data = await apiFetch(`/students/${STUDENT_ID}/recommendations/suggest`, {
-      method:'POST', body: JSON.stringify({category}),
-    });
-  } catch (e) { toast('Could not get a new suggestion, try again'); return; }
-  if (!data.generated){ toast('You have plenty of open suggestions already, finish a few first'); return; }
-  SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
-  renderSugPage(); renderSugs(); renderNudges(); toast('New suggestion added');
+    const category = document.getElementById('sug-scope').value || null;
+    let data;
+    try {
+      data = await apiFetch(`/students/${STUDENT_ID}/recommendations/suggest`, {
+        method:'POST', body: JSON.stringify({category}),
+      });
+    } catch (e) { toast('Could not get a new suggestion, try again'); return; }
+    if (!data.generated){ toast('You have plenty of open suggestions already, finish a few first'); return; }
+    SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
+    renderSugPage(); renderSugs(); renderNudges(); toast('New suggestion added');
+  } finally {
+    suggestInFlight = false;
+    if (sugBtn){ sugBtn.disabled = false; sugBtn.textContent = 'Suggest something'; }
+    renderBudget();   // recomputes #more-btn's real disabled/text state from current CAP status
+  }
 }
 function sugCard(s){
   const estBit  = hasEst(s) ? `<span class="est">Est. ${escHtml(s.est)}</span>`
@@ -2587,8 +2570,8 @@ function openTaskEdit(id){
   document.getElementById('te-h').textContent = 'Edit task';
   const iso = (() => { const d = parseWhen(t.target); return d ? d.toISOString().slice(0,10) : ''; })();
   document.getElementById('tedit').innerHTML = `
-    <div style="font-weight:800;font-size:15px;margin-bottom:3px">${t.t}</div>
-    <div class="why" style="margin-bottom:14px">${t.why}</div>
+    <div style="font-weight:800;font-size:15px;margin-bottom:3px">${escHtml(t.t)}</div>
+    <div class="why" style="margin-bottom:14px">${escHtml(t.why)}</div>
     <div class="fgrid">
       ${t.hard ? `<div class="f wide"><label>Deadline</label>
         <div class="hard" style="align-self:flex-start">${LOCK_SVG} ${t.hard}</div>
@@ -2598,7 +2581,7 @@ function openTaskEdit(id){
         <option value="not_started"${t.st==='not_started'?' selected':''}>Not started</option>
         <option value="in_progress"${t.st==='in_progress'?' selected':''}>In progress</option>
         <option value="done"${t.st==='done'?' selected':''}>Done</option>
-        <option value="snooze"${t.st==='snooze'?' selected':''}>Snoozed</option>
+        <option value="snoozed"${t.st==='snoozed'?' selected':''}>Snoozed</option>
       </select></div>
     </div>
     <div class="mfoot">
@@ -2609,13 +2592,15 @@ function openTaskEdit(id){
   document.getElementById('tovl').classList.add('open');
 }
 function closeTaskEdit(){ document.getElementById('tovl').classList.remove('open'); editId=null; editOwn=null; }
-function saveTaskEdit(){
+async function saveTaskEdit(){
   const t = TASKS.find(x=>x.id===editId); if(!t) return closeTaskEdit();
   const d = document.getElementById('te-date').value;
   t.target = d ? new Date(d+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
   t.st = document.getElementById('te-status').value;
   closeTaskEdit();
   renderTasks(); renderTimeline(); renderCalendar(); autoRefill(); syncCalendar();
+  await Promise.all([patchTaskTargetDate(t, d || null), patchTaskStatus(t, t.st)]);
+  await moveBackToSuggestionsIfReverted(t);
   toast(calConnected ? 'Saved and re-synced to your calendar' : 'Task updated');
 }
 
@@ -2918,9 +2903,9 @@ function renderMomentum(){
 
 /* Your next move: a live preview of the 3 most important open suggestions --
    SUGS is already the real, backend-sorted-by-urgency list (see
-   loadSuggestions), so "most important" is just its first 3. Keep this in
-   sync with anything that changes SUGS (loadSuggestions/addSug/dismissSug/
-   snoozeSug/suggestMore all call this too). */
+   loadRecommendations), so "most important" is just its first 3. Keep this
+   in sync with anything that changes SUGS (loadRecommendations/addSug/
+   dismissSug/snoozeSug/suggestMore/autoRefill all call this too). */
 function renderNudges(){
   const top3 = SUGS.slice(0,3);
   document.getElementById('nudges').innerHTML = top3.length
