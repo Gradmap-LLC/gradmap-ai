@@ -1629,6 +1629,20 @@ function renderRoad(){
   if (bootDone) renderGrowth();
 }
 renderRoad();
+/* Profile/Courses & Grades/Activities & Honors/Major Interests stay the
+   mock (no real data source wired up for them yet) -- Colleges and Tests
+   are the two sections with a real, already-queried backend behind them. */
+async function loadReadiness(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
+  catch (e) { return; }
+  const testsSection = SECTIONS.find(s=>s.key==='tests');
+  if (testsSection){ testsSection.pct = data.tests.pct; testsSection.missing = data.tests.missing; }
+  const collegesSection = SECTIONS.find(s=>s.key==='colleges');
+  if (collegesSection){ collegesSection.pct = data.colleges.pct; collegesSection.missing = data.colleges.missing; }
+  renderRoad();
+}
+loadReadiness();
 
 /* ---------- 3. Calendar ---------- */
 /* Google and Apple are both real, independent connections -- either, both,

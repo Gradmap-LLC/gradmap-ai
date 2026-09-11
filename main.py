@@ -286,6 +286,50 @@ def get_college_list(student_id: str):
     return _fetch_college_list(student_id)
 
 
+# --- Road to CAM: real Colleges/Tests readiness ---------------------------
+# Profile/Courses & Grades/Activities & Honors/Major Interests stay the
+# hand-authored mock in the dashboard for now -- these two are the only
+# sections with a real, already-queried data source behind them.
+
+COLLEGE_LIST_TARGET_MIN = 8  # "most students land on 8-12" -- reaching the low end counts as fully ready
+
+
+def _compute_colleges_readiness(student_id):
+    total = _fetch_college_list(student_id)["total"]
+    pct = min(100, round(total / COLLEGE_LIST_TARGET_MIN * 100)) if total else 0
+    return {
+        "pct": pct,
+        "missing": f"{total} school{'' if total == 1 else 's'} saved. Most students land on 8–12.",
+    }
+
+
+def _compute_tests_readiness(student_id):
+    try:
+        snapshot = _fetch_student_snapshot(student_id)
+    except ValueError:
+        return {"pct": 0, "missing": "No test date on record. Add a sitting or mark test-optional."}
+
+    sat, act = snapshot["sat_test"], snapshot["act_test"]
+    has_sat_score = bool(sat["is_have_sat_scores_report"])
+    has_act_score = bool(act["is_have_act_score_report"])
+    has_future_date = bool(sat["future_testing_date_1"]) or bool(act["future_testing_date_1"])
+
+    if has_sat_score or has_act_score:
+        which = "SAT and ACT" if (has_sat_score and has_act_score) else ("SAT" if has_sat_score else "ACT")
+        return {"pct": 100, "missing": f"{which} score on file."}
+    if has_future_date:
+        return {"pct": 50, "missing": "Test date on record. Report your score once you have it."}
+    return {"pct": 0, "missing": "No test date on record. Add a sitting or mark test-optional."}
+
+
+@app.get("/students/{student_id}/readiness")
+def get_readiness(student_id: str):
+    return {
+        "colleges": _compute_colleges_readiness(student_id),
+        "tests": _compute_tests_readiness(student_id),
+    }
+
+
 class RecommendationStatusUpdate(BaseModel):
     status: str = "not_started"
 
