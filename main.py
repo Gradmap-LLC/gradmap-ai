@@ -33,6 +33,12 @@ from google_calendar import (
     pop_pending_flow,
     sync_events as sync_google_calendar_events,
 )
+from own_events import (
+    add_own_event,
+    delete_own_event,
+    list_own_events,
+    update_own_event,
+)
 from recommend import (
     ALLOWED_CATEGORIES,
     add_student_task,
@@ -42,6 +48,7 @@ from recommend import (
     fetch_recommendation,
     recommendations,
     set_recommendation_target_date,
+    set_recommendation_title,
     update_recommendation_status,
 )
 from story import get_story, rebuild_story, save_edited_line
@@ -872,6 +879,7 @@ class AddRecommendationRequest(BaseModel):
     category: str | None = None
     urgency_rank: str | None = None
     estimated_time: str | None = None
+    target_date: str | None = None  # 'YYYY-MM-DD'
 
 
 @app.post("/students/{student_id}/recommendations/custom")
@@ -885,6 +893,7 @@ def add_custom_recommendation(student_id: str, body: AddRecommendationRequest):
             category=body.category,
             urgency_rank=body.urgency_rank,
             estimated_time=body.estimated_time,
+            target_date=body.target_date,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
@@ -936,6 +945,19 @@ def set_recommendation_target_date_endpoint(student_id: str, recommendation_id: 
         raise HTTPException(status_code=404, detail="Recommendation not found")
 
     return {"id": result["id"], "target_date": str(result["target_date"]) if result["target_date"] else None}
+
+
+class RecommendationTitleUpdate(BaseModel):
+    title: str
+
+
+@app.patch("/students/{student_id}/recommendations/{recommendation_id}/title")
+def set_recommendation_title_endpoint(student_id: str, recommendation_id: int, body: RecommendationTitleUpdate):
+    result = set_recommendation_title(student_id, recommendation_id, body.title)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+
+    return {"id": result["id"], "title": result["title"]}
 
 
 @app.get("/students/{student_id}/recommendations/{recommendation_id}/calendar-link")
@@ -1082,6 +1104,50 @@ def apple_calendar_sync(student_id: str, body: AppleCalendarSyncRequest):
     except AppleCalendarAuthError as error:
         raise HTTPException(status_code=401, detail=str(error))
     return {"synced": len(body.items)}
+
+
+# --- Student's own calendar events (campus visits, test days, etc.) --------
+# Separate from tasks/recommendations: these are events the student typed in
+# directly on the calendar screen, not something GradMap suggested.
+
+class AddOwnEventRequest(BaseModel):
+    title: str
+    event_date: str  # 'YYYY-MM-DD'
+    kind: Literal["campus_visit", "test_day", "school_event", "info_session", "family_personal", "other"]
+
+
+@app.post("/students/{student_id}/own-events")
+def add_own_event_endpoint(student_id: str, body: AddOwnEventRequest):
+    try:
+        return add_own_event(student_id, body.title, body.event_date, body.kind)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/students/{student_id}/own-events")
+def list_own_events_endpoint(student_id: str):
+    return {"events": list_own_events(student_id)}
+
+
+class UpdateOwnEventRequest(BaseModel):
+    title: str
+    event_date: str  # 'YYYY-MM-DD'
+
+
+@app.patch("/students/{student_id}/own-events/{event_id}")
+def update_own_event_endpoint(student_id: str, event_id: int, body: UpdateOwnEventRequest):
+    result = update_own_event(student_id, event_id, body.title, body.event_date)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return result
+
+
+@app.delete("/students/{student_id}/own-events/{event_id}")
+def delete_own_event_endpoint(student_id: str, event_id: int):
+    result = delete_own_event(student_id, event_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"id": result["id"], "title": result["title"], "removed": True}
 
 
 # --- "Your story" -------------------------------------------------------

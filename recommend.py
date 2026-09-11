@@ -88,9 +88,9 @@ WHERE conname = 'student_recommendations_status_check'
 
 
 INSERT_RECOMMENDATION_SQL = """
-INSERT INTO student_recommendations (student_id, urgency_rank, category, title, subtext, link, estimated_time, google_calendar)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-RETURNING id, status, estimated_time, google_calendar
+INSERT INTO student_recommendations (student_id, urgency_rank, category, title, subtext, link, estimated_time, google_calendar, target_date)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+RETURNING id, status, estimated_time, google_calendar, target_date
 """
 
 
@@ -158,6 +158,13 @@ WHERE id = %(id)s AND student_id = %(student_id)s
 RETURNING id, target_date
 """
 
+SET_RECOMMENDATION_TITLE_SQL = """
+UPDATE student_recommendations
+SET title = %(title)s, updated_at = now()
+WHERE id = %(id)s AND student_id = %(student_id)s
+RETURNING id, title
+"""
+
 
 FETCH_RECOMMENDATION_SQL = """
 SELECT id, title
@@ -212,6 +219,7 @@ def _store_recommendation(student_id, recommendation):
                     recommendation.get("link"),
                     recommendation.get("estimated_time"),
                     google_calendar,
+                    recommendation.get("target_date"),
                 ),
             )
             return cursor.fetchone()
@@ -247,6 +255,17 @@ def set_recommendation_target_date(student_id, recommendation_id, target_date):
             cursor.execute(
                 SET_RECOMMENDATION_TARGET_DATE_SQL,
                 {"target_date": target_date, "id": recommendation_id, "student_id": student_id},
+            )
+            return cursor.fetchone()
+
+
+def set_recommendation_title(student_id, recommendation_id, title):
+    ensure_student_recommendations_table()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                SET_RECOMMENDATION_TITLE_SQL,
+                {"title": title, "id": recommendation_id, "student_id": student_id},
             )
             return cursor.fetchone()
 
@@ -297,15 +316,16 @@ def fetch_all_recommendations(student_id):
 
 
 def add_student_task(student_id, title, subtext=None, link=None, category=None,
-                      urgency_rank=None, estimated_time=None):
-    """Insert a student-created task into the same student_recommendations table."""
+                      urgency_rank=None, estimated_time=None, target_date=None):
+    """Insert a student-created task into the same student_recommendations table.
+    target_date: an ISO date string ('YYYY-MM-DD'), or None."""
     if category is not None and category not in ALLOWED_CATEGORIES:
         raise ValueError(f"category must be one of {ALLOWED_CATEGORIES}, got {category!r}")
     if urgency_rank is not None and urgency_rank not in ALLOWED_URGENCY_RANKS:
         raise ValueError(f"urgency_rank must be one of {ALLOWED_URGENCY_RANKS}, got {urgency_rank!r}")
 
     ensure_student_recommendations_table()
-    recommendation_id, status, estimated_time, google_calendar = _store_recommendation(
+    recommendation_id, status, estimated_time, google_calendar, target_date = _store_recommendation(
         student_id,
         {
             "urgency_rank": urgency_rank,
@@ -314,6 +334,7 @@ def add_student_task(student_id, title, subtext=None, link=None, category=None,
             "subtext": subtext,
             "link": link,
             "estimated_time": estimated_time or DEFAULT_ESTIMATED_TIME,
+            "target_date": target_date,
         },
     )
     return {
@@ -326,6 +347,7 @@ def add_student_task(student_id, title, subtext=None, link=None, category=None,
         "estimated_time": estimated_time,
         "status": status,
         "google_calendar": google_calendar,
+        "target_date": str(target_date) if target_date else None,
     }
 
 
@@ -513,10 +535,11 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
     for recommendation in result["recommendations"]:
         if category is not None:
             recommendation["category"] = category
-        recommendation_id, status, estimated_time, google_calendar = _store_recommendation(student_id, recommendation)
+        recommendation_id, status, estimated_time, google_calendar, target_date = _store_recommendation(student_id, recommendation)
         recommendation["id"] = recommendation_id
         recommendation["status"] = status
         recommendation["estimated_time"] = estimated_time
         recommendation["google_calendar"] = google_calendar
+        recommendation["target_date"] = str(target_date) if target_date else None
 
     return result

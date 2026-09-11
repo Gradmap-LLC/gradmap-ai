@@ -1390,8 +1390,8 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
     </div>
     <div class="mbd">
       <div class="fgrid">
-        <div class="f wide"><label>What is it</label><input type="text" id="ev-t" placeholder="e.g. Campus visit, UC San Diego"></div>
-        <div class="f"><label>Date</label><input type="date" id="ev-d"></div>
+        <div class="f wide"><label>What is it *</label><input type="text" id="ev-t" placeholder="e.g. Campus visit, UC San Diego"></div>
+        <div class="f"><label>Date *</label><input type="date" id="ev-d"></div>
         <div class="f"><label>Kind</label><select id="ev-k">
           <option>Campus visit</option><option>Test day</option><option>School event</option>
           <option>Info session</option><option>Family / personal</option><option>Other</option>
@@ -1401,7 +1401,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
         </select></div>
       </div>
       <div class="mfoot">
-        <button class="btn" onclick="saveEvent()">Add</button>
+        <button class="btn" id="ev-add-btn" onclick="saveEvent()">Add</button>
         <span class="lands" id="ev-lands"></span>
       </div>
     </div>
@@ -1778,6 +1778,7 @@ async function syncCalendar(){
 }
 checkGoogleCalendarStatus();
 checkAppleCalendarStatus();
+loadOwnEvents();
 
 /* ---------- 4. Tasks ----------
    CAM-season tasks are deliberately NOT in this list. Anything whose
@@ -2017,6 +2018,15 @@ async function patchTaskTargetDate(t, isoDate){
   try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${t.id}/target-date`, {method:'PATCH', body: JSON.stringify({target_date: isoDate})}); }
   catch (e) { toast('Could not save the date, try again'); }
 }
+async function patchTaskTitle(t, title){
+  if (!t.fromRecommendation) return;
+  try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${t.id}/title`, {method:'PATCH', body: JSON.stringify({title})}); }
+  catch (e) { toast('Could not save the name, try again'); }
+}
+async function deleteTaskRemote(t){
+  if (!t.fromRecommendation) return;
+  await apiFetch(`/students/${STUDENT_ID}/recommendations/${t.id}`, {method:'DELETE'});
+}
 /* Setting status back to not_started on a recommendation-backed task means
    the student isn't working on it after all -- it belongs back in Suggested
    for you, not sitting in My Plan with nothing happening. Re-fetching (not
@@ -2115,6 +2125,10 @@ function mapTaskFromRecommendation(r){
 }
 
 let SUGS = [];
+/* Recommendation ids currently mid-request (add/snooze/dismiss) -- all three
+   buttons on that card disable together while any one of them is busy,
+   since only one action makes sense per card at a time. */
+let sugBusyIds = new Set();
 /* Suggestions are student_recommendations rows with status='not_started';
    any other status means the student already acted on it (see addSug) --
    those become My Plan tasks instead. One fetch drives both lists. */
@@ -2147,14 +2161,21 @@ function renderSugs(){
   document.getElementById('sugbody').innerHTML = chips + body;
 }
 async function addSug(id){
+  if (sugBusyIds.has(id)) return;
   const s = SUGS.find(x=>x.id===id);
   if (!s) return;
   if (activeCount() >= CAP){ toast('Your plan is full, finish a task first'); return; }
+  sugBusyIds.add(id); renderSugs(); renderSugPage(); renderNudges();
   try {
     await apiFetch(`/students/${STUDENT_ID}/recommendations/${id}`, {
       method:'PATCH', body: JSON.stringify({status:'in_progress'}),
     });
-  } catch (e) { toast('Could not add that, try again'); return; }
+  } catch (e) {
+    toast('Could not add that, try again');
+    sugBusyIds.delete(id); renderSugs(); renderSugPage(); renderNudges();
+    return;
+  }
+  sugBusyIds.delete(id);
   TASKS.push({id:s.id, t:s.title, cat:s.cat, why:s.why,
               hard:'', target:'', est:s.est, st:'in_progress', grade:'', yr:'now', fromRecommendation:true});
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); renderTasks(); toast('Added "'+s.title+'" to your plan');
@@ -2163,6 +2184,7 @@ async function addSug(id){
    just hides the card for the rest of the session; it reappears next time
    suggestions are (re)loaded from the server. */
 function snoozeSug(id){
+  if (sugBusyIds.has(id)) return;
   const s = SUGS.find(x=>x.id===id);
   if (!s) return;
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Snoozed');
@@ -2172,10 +2194,17 @@ function snoozeSug(id){
    outstanding-recommendation cap, but the LLM still sees it and won't
    re-suggest the same underlying goal. */
 async function dismissSug(id){
+  if (sugBusyIds.has(id)) return;
   const s = SUGS.find(x=>x.id===id);
   if (!s) return;
+  sugBusyIds.add(id); renderSugs(); renderSugPage(); renderNudges();
   try { await apiFetch(`/students/${STUDENT_ID}/recommendations/${id}/dismiss`, {method:'POST'}); }
-  catch (e) { toast('Could not dismiss that, try again'); return; }
+  catch (e) {
+    toast('Could not dismiss that, try again');
+    sugBusyIds.delete(id); renderSugs(); renderSugPage(); renderNudges();
+    return;
+  }
+  sugBusyIds.delete(id);
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Dismissed');
 }
 loadRecommendations();
@@ -2190,10 +2219,10 @@ loadRecommendations();
    real Courses & Grades screen (decision from the Aug 30 session).      */
 const ADD_FORMS = {
   task: [
-    {l:'Task name', t:'text', w:1, ph:'e.g. Register for the October SAT'},
+    {l:'Task name *', t:'text', w:1, ph:'e.g. Register for the October SAT'},
     {l:'Category', t:'select', o:['Testing','Academic','Courses & Grades','Student Development','College Applications','Financial Aid','College Prep','GradMap Profile']},
     {l:'When', t:'select', o:['Due soon','Coming up','Later']},
-    {l:'Your target date', t:'date'},
+    {l:'Your target date *', t:'date'},
     {l:'Est. time', t:'select', o:['15 min','30 min','1 hr','2 hrs','3 hrs']}
   ],
   activity: [
@@ -2222,6 +2251,16 @@ const LANDS = {
   activity: ['your profile · Activities & Honors','PROFILE'],
   honor:    ['your profile · Activities & Honors','PROFILE']
 };
+/* The Task tab's Category options are the student-facing taxonomy this
+   dashboard has always shown; recommend.py's ALLOWED_CATEGORIES is a
+   smaller, fixed backend enum with no matching options for several of
+   these. Best-fit mapping, not a 1:1 match. */
+const TASK_CATEGORY_TO_BACKEND = {
+  'Testing':'upcoming_events', 'Academic':'course_planning', 'Courses & Grades':'course_planning',
+  'Student Development':'major', 'College Applications':'essay_planning', 'Financial Aid':'financial_aid',
+  'College Prep':'upcoming_events', 'GradMap Profile':'course_planning',
+};
+const TASK_WHEN_TO_URGENCY = {'Due soon':'due_soon', 'Coming up':'coming_up', 'Later':'later'};
 let addKind = 'task';
 
 function drawAddForm(){
@@ -2252,7 +2291,7 @@ function drawAddForm(){
   const [where] = LANDS[addKind];
   host.innerHTML = `<div class="fgrid">${fields}</div>
     <div class="mfoot">
-      <button class="btn" onclick="saveAdd()">Add</button>
+      <button class="btn" id="qa-add-btn" onclick="saveAdd()">Add</button>
       <span class="lands">Lands in ${where}.</span>
     </div>`;
 }
@@ -2300,30 +2339,63 @@ function bumpSection(key, by){
   renderRoad();
 }
 
-function saveAdd(){
-  const first = document.querySelector('#addform input, #addform select');
-  const name = (first && first.value.trim()) || 'New item';
-  const [where, tag] = LANDS[addKind];
+let saveAddInFlight = false;
+async function saveAdd(){
+  if (saveAddInFlight) return;
+  saveAddInFlight = true;
+  const btn = document.getElementById('qa-add-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Loading...'; }
+  try {
+    const first = document.querySelector('#addform input, #addform select');
+    const name = (first && first.value.trim()) || 'New item';
+    const [where, tag] = LANDS[addKind];
 
-  if (addKind === 'task'){
-    if (activeCount() >= CAP){ toast('Your plan is full, finish a task first'); return; }
-    const sels = document.querySelectorAll('#addform select');
-    TASKS.push({id:Date.now(), t:name, cat:(sels[0]&&sels[0].value)||'Academic', yr:'now',
-      why:'You added this yourself.', hard:'', target:'',
-      est:(sels[2]&&sels[2].value)||'30 min', st:'not_started', grade:'11th'});
-    renderTasks();
-  } else {
-    /* This prototype's Quick Add doesn't persist activities/honors to the
-       backend yet (My Story now reads real activity_honor rows, via
-       story.py) -- so it can only bump the readiness bar here, not affect
-       the story. Rebuild picks up a real add made elsewhere in the app. */
-    bumpSection('activities', addKind==='honor' ? 9 : 14);
+    if (addKind === 'task'){
+      if (activeCount() >= CAP){ toast('Your plan is full, finish a task first'); return; }
+      const sels = document.querySelectorAll('#addform select');
+      const dateInput = document.querySelector('#addform input[type=date]');
+      const targetDate = dateInput ? dateInput.value : '';
+      if (!first.value.trim() || !targetDate){ toast('Give it a task name and a target date'); return; }
+      const displayCat = (sels[0] && sels[0].value) || 'Academic';
+      const when = (sels[1] && sels[1].value) || 'Coming up';
+      const est = (sels[2] && sels[2].value) || '30 min';
+
+      let created;
+      try {
+        created = await apiFetch(`/students/${STUDENT_ID}/recommendations/custom`, {
+          method:'POST', body: JSON.stringify({
+            title: name,
+            category: TASK_CATEGORY_TO_BACKEND[displayCat] || 'course_planning',
+            urgency_rank: TASK_WHEN_TO_URGENCY[when] || 'coming_up',
+            estimated_time: est,
+            target_date: targetDate || null,
+          }),
+        });
+        await apiFetch(`/students/${STUDENT_ID}/recommendations/${created.id}`, {
+          method:'PATCH', body: JSON.stringify({status:'in_progress'}),
+        });
+      } catch (e) { toast('Could not add that task, try again'); return; }
+
+      TASKS.push({id:created.id, t:name, cat:displayCat, why:'You added this yourself.',
+        hard:'', target: targetDate ? isoToDisplay(targetDate) : '',
+        est, st:'in_progress', grade:'', yr:'now', fromRecommendation:true});
+      renderTasks(); renderTimeline(); renderCalendar(); syncCalendar();
+    } else {
+      /* This prototype's Quick Add doesn't persist activities/honors to the
+         backend yet (My Story now reads real activity_honor rows, via
+         story.py) -- so it can only bump the readiness bar here, not affect
+         the story. Rebuild picks up a real add made elsewhere in the app. */
+      bumpSection('activities', addKind==='honor' ? 9 : 14);
+    }
+    let label = `"${name}"`;
+    const gs = pickedGrades();
+    if (gs.length) label += ` &middot; grade${gs.length>1?'s':''} ${gs.join(', ')}`;
+    confirmAdd(label, where, tag);
+    toast('Added to ' + where);
+  } finally {
+    saveAddInFlight = false;
+    if (btn){ btn.disabled = false; btn.textContent = 'Add'; }
   }
-  let label = `"${name}"`;
-  const gs = pickedGrades();
-  if (gs.length) label += ` &middot; grade${gs.length>1?'s':''} ${gs.join(', ')}`;
-  confirmAdd(label, where, tag);
-  toast('Added to ' + where);
 }
 
 function nlAdd(){
@@ -2408,12 +2480,19 @@ function parseWhen(str){
   if(mo < NOW.getMonth()-3) yr=NOW.getFullYear()+1;   // Jan–May read as next school year
   return new Date(yr, mo, +m[2]);
 }
-let OWN = [];   /* events the student adds themselves, not tasks */
+let OWN = [];   /* events the student adds themselves, not tasks -- see loadOwnEvents() */
+async function loadOwnEvents(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/own-events`); }
+  catch (e) { return; }
+  OWN = data.events.map(e => ({id:e.id, t:e.title, d:new Date(e.event_date+'T00:00'), kind:e.kind}));
+  renderCalendar();
+}
 function calEvents(){
   const ev={};
-  OWN.forEach((o,i)=>{
+  OWN.forEach(o=>{
     if(o.d.getMonth()!==calCursor.getMonth()||o.d.getFullYear()!==calCursor.getFullYear()) return;
-    (ev[o.d.getDate()]=ev[o.d.getDate()]||[]).push(['own',o.t,i]);
+    (ev[o.d.getDate()]=ev[o.d.getDate()]||[]).push(['own',o.t,o.id]);
   });
   TASKS.forEach(t=>{
     [['hard',t.hard],['tgt',t.target]].forEach(([kind,str])=>{
@@ -2509,15 +2588,16 @@ function sugCard(s){
   const estBit  = hasEst(s) ? `<span class="est">Est. ${escHtml(s.est)}</span>`
                             : `<span class="est">Time varies</span>`;
   const destBit = s.link ? `<a class="chip" href="${escHtml(s.link)}" target="_blank" rel="noopener" style="text-decoration:none">Open link</a>` : '';
+  const busy = sugBusyIds.has(s.id);
   return `<div class="sug">
     <div class="r1"><div class="st">${escHtml(s.title)}</div><span class="urg ${s.urg}">${
       s.urg==='due_soon'?'Due soon':s.urg==='coming_up'?'Coming up':'Later'}</span></div>
     <div class="w"><b>Why this</b>${escHtml(s.why)}</div>
     <div class="trow">${estBit}<span class="chip">${escHtml(s.cat)}</span>${destBit}</div>
-    <div class="acts">
-      <button class="btn" onclick="addSug(${s.id})">Add to my tasks</button>
-      <button class="ghost" onclick="snoozeSug(${s.id})">Snooze</button>
-      <button class="ghost" onclick="dismissSug(${s.id})">Dismiss</button>
+    <div class="acts"${busy?' style="opacity:.5;pointer-events:none"':''}>
+      <button class="btn" ${busy?'disabled':''} onclick="addSug(${s.id})">${busy?'Loading...':'Add to my tasks'}</button>
+      <button class="ghost" ${busy?'disabled':''} onclick="snoozeSug(${s.id})">Snooze</button>
+      <button class="ghost" ${busy?'disabled':''} onclick="dismissSug(${s.id})">Dismiss</button>
     </div></div>`;
 }
 function renderSugPage(){
@@ -2535,33 +2615,64 @@ function renderSugPage(){
 let editId = null;
 /* A student's own calendar event is theirs: it can be renamed, moved, or
    removed. Tasks cannot be deleted from here, they carry a status instead. */
-let editOwn = null;
-function openOwnEvent(i){
-  const o = OWN[i]; if(!o) return; editOwn = i; editId = null;
+let editOwn = null;   /* the real backend id of the own-event being edited, not an array index */
+function openOwnEvent(id){
+  const o = OWN.find(x=>x.id===id); if(!o) return; editOwn = id; editId = null;
   document.getElementById('te-h').textContent = 'Your event';
   document.getElementById('tedit').innerHTML =
-      '<div class="fgrid"><div class="f wide"><label>What is it</label>'
+      '<div class="fgrid"><div class="f wide"><label>What is it *</label>'
     + '<input type="text" id="te-own-t" value="'+o.t.replace(/"/g,'&quot;')+'"></div>'
-    + '<div class="f"><label>Date</label><input type="date" id="te-own-d" value="'+o.d.toISOString().slice(0,10)+'"></div>'
-    + '<div class="f"><label>Kind</label><input type="text" value="'+(o.kind||'Event')+'" disabled style="opacity:.6"></div></div>'
-    + '<div class="mfoot"><button class="btn" onclick="saveOwnEvent()">Save</button>'
-    + '<button class="ghost" onclick="deleteOwnEvent()">Remove</button>'
+    + '<div class="f"><label>Date *</label><input type="date" id="te-own-d" value="'+o.d.toISOString().slice(0,10)+'"></div>'
+    + '<div class="f"><label>Kind</label><input type="text" value="'+(EVENT_KIND_LABELS[o.kind]||o.kind||'Event')+'" disabled style="opacity:.6"></div></div>'
+    + '<div class="mfoot"><button class="btn" id="te-own-save-btn" onclick="saveOwnEvent()">Save</button>'
+    + '<button class="ghost" id="te-own-remove-btn" onclick="deleteOwnEvent()">Remove</button>'
     + '<span class="lands">You added this one yourself.</span></div>';
   document.getElementById('tovl').classList.add('open');
 }
-function saveOwnEvent(){
-  const o = OWN[editOwn]; if(!o) return closeTaskEdit();
+/* Shared by Save and Remove -- only one of them can meaningfully be in
+   flight at a time on this modal, so one flag disables both buttons. */
+let ownEventActionInFlight = false;
+function setOwnEventButtonsBusy(busy, saveLabel){
+  const saveBtn = document.getElementById('te-own-save-btn');
+  const removeBtn = document.getElementById('te-own-remove-btn');
+  if (saveBtn){ saveBtn.disabled = busy; saveBtn.textContent = busy ? 'Loading...' : (saveLabel || 'Save'); }
+  if (removeBtn) removeBtn.disabled = busy;
+}
+async function saveOwnEvent(){
+  if (ownEventActionInFlight) return;
+  const o = OWN.find(x=>x.id===editOwn); if(!o) return closeTaskEdit();
   const t = document.getElementById('te-own-t').value.trim();
   const dv = document.getElementById('te-own-d').value;
   if(!t || !dv){ toast('Give it a name and a date'); return; }
+  ownEventActionInFlight = true;
+  setOwnEventButtonsBusy(true);
+  try {
+    await apiFetch(`/students/${STUDENT_ID}/own-events/${editOwn}`, {
+      method:'PATCH', body: JSON.stringify({title:t, event_date:dv}),
+    });
+  } catch (e) {
+    toast('Could not save that event, try again');
+    ownEventActionInFlight = false; setOwnEventButtonsBusy(false);
+    return;
+  }
   o.t = t; o.d = new Date(dv+'T00:00');
   calCursor = new Date(o.d.getFullYear(), o.d.getMonth(), 1);
+  ownEventActionInFlight = false;
   closeTaskEdit(); renderCalendar(); syncCalendar();
   toast(calConnected ? 'Event updated and re-synced' : 'Event updated');
 }
-function deleteOwnEvent(){
-  if(editOwn===null) return;
-  OWN.splice(editOwn,1); closeTaskEdit(); renderCalendar(); syncCalendar(); toast('Event removed');
+async function deleteOwnEvent(){
+  if(editOwn===null || ownEventActionInFlight) return;
+  ownEventActionInFlight = true;
+  setOwnEventButtonsBusy(true);
+  try { await apiFetch(`/students/${STUDENT_ID}/own-events/${editOwn}`, {method:'DELETE'}); }
+  catch (e) {
+    toast('Could not remove that event, try again');
+    ownEventActionInFlight = false; setOwnEventButtonsBusy(false);
+    return;
+  }
+  ownEventActionInFlight = false;
+  OWN = OWN.filter(x=>x.id!==editOwn); closeTaskEdit(); renderCalendar(); syncCalendar(); toast('Event removed');
 }
 
 function openTaskEdit(id){
@@ -2570,9 +2681,8 @@ function openTaskEdit(id){
   document.getElementById('te-h').textContent = 'Edit task';
   const iso = (() => { const d = parseWhen(t.target); return d ? d.toISOString().slice(0,10) : ''; })();
   document.getElementById('tedit').innerHTML = `
-    <div style="font-weight:800;font-size:15px;margin-bottom:3px">${escHtml(t.t)}</div>
-    <div class="why" style="margin-bottom:14px">${escHtml(t.why)}</div>
     <div class="fgrid">
+      <div class="f wide"><label>Task name</label><input type="text" id="te-title" value="${t.t.replace(/"/g,'&quot;')}"></div>
       ${t.hard ? `<div class="f wide"><label>Deadline</label>
         <div class="hard" style="align-self:flex-start">${LOCK_SVG} ${t.hard}</div>
         <div class="help">Set by the source. You cannot move this one.</div></div>` : ''}
@@ -2584,8 +2694,10 @@ function openTaskEdit(id){
         <option value="snoozed"${t.st==='snoozed'?' selected':''}>Snoozed</option>
       </select></div>
     </div>
+    <div class="why" style="margin:10px 0">${escHtml(t.why)}</div>
     <div class="mfoot">
       <button class="btn" onclick="saveTaskEdit()">Save</button>
+      <button class="ghost" onclick="deleteTask()">Remove</button>
       <button class="ghost" onclick="closeTaskEdit();showScreen('plan')">Open in My Plan</button>
       <span class="lands">${calConnected?'Changes re-sync to your calendar.':'Connect a calendar to sync this.'}</span>
     </div>`;
@@ -2594,14 +2706,25 @@ function openTaskEdit(id){
 function closeTaskEdit(){ document.getElementById('tovl').classList.remove('open'); editId=null; editOwn=null; }
 async function saveTaskEdit(){
   const t = TASKS.find(x=>x.id===editId); if(!t) return closeTaskEdit();
+  const title = document.getElementById('te-title').value.trim() || t.t;
   const d = document.getElementById('te-date').value;
+  t.t = title;
   t.target = d ? new Date(d+'T00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
   t.st = document.getElementById('te-status').value;
   closeTaskEdit();
   renderTasks(); renderTimeline(); renderCalendar(); autoRefill(); syncCalendar();
-  await Promise.all([patchTaskTargetDate(t, d || null), patchTaskStatus(t, t.st)]);
+  await Promise.all([patchTaskTitle(t, title), patchTaskTargetDate(t, d || null), patchTaskStatus(t, t.st)]);
   await moveBackToSuggestionsIfReverted(t);
   toast(calConnected ? 'Saved and re-synced to your calendar' : 'Task updated');
+}
+async function deleteTask(){
+  const t = TASKS.find(x=>x.id===editId); if(!t) return closeTaskEdit();
+  try { await deleteTaskRemote(t); }
+  catch (e) { toast('Could not remove that task, try again'); return; }
+  TASKS = TASKS.filter(x=>x.id!==t.id);
+  closeTaskEdit();
+  renderTasks(); renderTimeline(); renderCalendar(); syncCalendar();
+  toast('Task removed');
 }
 
 /* ---------- 13. Careers & Majors, the reverse-engineering funnel ----------
@@ -2802,6 +2925,14 @@ function addExplore(title, major){
 }
 
 /* ---------- 14. Student's own calendar events ---------- */
+/* #ev-k's option text is the display label; own_events.py's ALLOWED_EVENT_KINDS
+   is the real backend enum. EVENT_KIND_LABELS is the reverse, for display
+   (e.g. the disabled "Kind" field when editing an existing own event). */
+const EVENT_KIND_TO_BACKEND = {
+  'Campus visit':'campus_visit', 'Test day':'test_day', 'School event':'school_event',
+  'Info session':'info_session', 'Family / personal':'family_personal', 'Other':'other',
+};
+const EVENT_KIND_LABELS = Object.fromEntries(Object.entries(EVENT_KIND_TO_BACKEND).map(([label,v])=>[v,label]));
 function openEvent(day){
   const d = day
     ? new Date(calCursor.getFullYear(), calCursor.getMonth(), day)
@@ -2814,26 +2945,57 @@ function openEvent(day){
   setTimeout(()=>document.getElementById('ev-t').focus(), 60);
 }
 function closeEvent(){ document.getElementById('eovl').classList.remove('open'); }
-function saveEvent(){
+let saveEventInFlight = false;
+async function saveEvent(){
+  if (saveEventInFlight) return;
   const t = document.getElementById('ev-t').value.trim();
   const dv = document.getElementById('ev-d').value;
   if(!t || !dv){ toast('Give it a name and a date'); return; }
-  const d = new Date(dv+'T00:00');
-  const kind = document.getElementById('ev-k').value;
-  OWN.push({id:Date.now(), t, d, kind});
-  if (document.getElementById('ev-task').value === 'yes'){
-    if (activeCount() >= CAP) toast('Added to your calendar. Plan is full, so no task was created.');
-    else {
-      TASKS.push({id:Date.now(), t, cat:'College Prep', sub:kind, yr:'now',
-        why:'You added this yourself from the calendar.', hard:'',
-        target:d.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
-        est:'varies', st:'not_started', grade:'11th'});
-      renderTasks(); renderTimeline();
+
+  saveEventInFlight = true;
+  const btn = document.getElementById('ev-add-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Loading...'; }
+  try {
+    const d = new Date(dv+'T00:00');
+    const kindLabel = document.getElementById('ev-k').value;
+    const kind = EVENT_KIND_TO_BACKEND[kindLabel] || 'other';
+
+    let created;
+    try {
+      created = await apiFetch(`/students/${STUDENT_ID}/own-events`, {
+        method:'POST', body: JSON.stringify({title:t, event_date:dv, kind}),
+      });
+    } catch (e) { toast('Could not add that event, try again'); return; }
+    OWN.push({id:created.id, t, d, kind});
+
+    if (document.getElementById('ev-task').value === 'yes'){
+      if (activeCount() >= CAP) toast('Added to your calendar. Plan is full, so no task was created.');
+      else {
+        try {
+          const task = await apiFetch(`/students/${STUDENT_ID}/recommendations/custom`, {
+            method:'POST', body: JSON.stringify({
+              title:t, category:'upcoming_events', urgency_rank:'coming_up',
+              estimated_time:'varies', target_date:dv,
+            }),
+          });
+          await apiFetch(`/students/${STUDENT_ID}/recommendations/${task.id}`, {
+            method:'PATCH', body: JSON.stringify({status:'in_progress'}),
+          });
+          TASKS.push({id:task.id, t, cat:'Upcoming Events', sub:kindLabel, yr:'now',
+            why:'You added this yourself from the calendar.', hard:'',
+            target:d.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
+            est:'varies', st:'in_progress', grade:'', fromRecommendation:true});
+          renderTasks(); renderTimeline();
+        } catch (e) { toast('Added to your calendar, but could not add it as a task'); }
+      }
     }
+    calCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+    closeEvent(); renderCalendar(); syncCalendar();
+    toast(calConnected ? 'Added and synced' : 'Added to your calendar');
+  } finally {
+    saveEventInFlight = false;
+    if (btn){ btn.disabled = false; btn.textContent = 'Add'; }
   }
-  calCursor = new Date(d.getFullYear(), d.getMonth(), 1);
-  closeEvent(); renderCalendar(); syncCalendar();
-  toast(calConnected ? 'Added and synced' : 'Added to your calendar');
 }
 
 /* ---------- 6. Collapse + toast ---------- */
@@ -2909,10 +3071,12 @@ function renderMomentum(){
 function renderNudges(){
   const top3 = SUGS.slice(0,3);
   document.getElementById('nudges').innerHTML = top3.length
-    ? top3.map(n=>
-        '<div class="nudge"><span class="tagq">'+escHtml(n.cat)+'</span>'
+    ? top3.map(n=>{
+        const busy = sugBusyIds.has(n.id);
+        return '<div class="nudge"><span class="tagq">'+escHtml(n.cat)+'</span>'
        +'<div class="nw">'+escHtml(n.title)+'</div><div class="nsub">'+escHtml(n.why||'')+'</div>'
-       +'<button class="go" onclick="addSug('+n.id+')">Add to my tasks</button></div>').join('')
+       +'<button class="go"'+(busy?' disabled':'')+' onclick="addSug('+n.id+')">'+(busy?'Loading...':'Add to my tasks')+'</button></div>';
+      }).join('')
     : '<div class="nsub">Nothing outstanding right now. Nice work.</div>';
 }
 
