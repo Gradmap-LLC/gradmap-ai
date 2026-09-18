@@ -1562,18 +1562,24 @@ const COUNSELOR = {name:'Ms. Reyes', school:'Lincoln High School'};
    verified  the counselor signed it off
    changes   the counselor sent it back, and a task exists in the plan for it   */
 let bootDone = false;   /* the growth cards read TASKS, which is defined further down */
+/* profile/tests/colleges are backed by a live /readiness call (loadReadiness,
+   below) -- they start at pct:null ("still loading") rather than a guessed
+   number, so the card shows a neutral loading state instead of a real-looking
+   value that then visibly snaps to the correct one a moment later. courses/
+   activities/majors have no live data source yet, so their numbers are the
+   real (mocked) value from the start -- nothing to flash. */
 const SECTIONS = [
-  {key:'profile',    name:'Profile',              pct:100, missing:'Name, class year and family details are all set.',            go:'Review',
+  {key:'profile',    name:'Profile',              pct:null, missing:'Loading…',                                                    go:'Review',
    review:'verified',  on:'Aug 30'},
   {key:'courses',    name:'Courses & Grades',     pct:78,  missing:'Junior spring grades not entered yet.',                        go:'Add grades',
    review:'submitted', on:'Aug 29'},
-  {key:'tests',      name:'Tests',                pct:30,  missing:'No test date on record. Add a sitting or mark test-optional.', go:'Add a test',
+  {key:'tests',      name:'Tests',                pct:null, missing:'Loading…',                                                    go:'Add a test',
    review:'none',      on:''},
   {key:'activities', name:'Activities & Honors',  pct:58,  missing:'Robotics club logged, but no role or hours on it.',            go:'Add detail',
    review:'changes',   on:'Aug 28'},
   {key:'majors',     name:'Major Interests',      pct:85,  missing:'Two majors picked. Test them with an activity.',              go:'Open explorer',
    review:'none',      on:''},
-  {key:'colleges',   name:'Colleges',             pct:45,  missing:'3 schools saved. Most students land on 8–12.',                 go:'Build list',
+  {key:'colleges',   name:'Colleges',             pct:null, missing:'Loading…',                                                    go:'Build list',
    review:'none',      on:''}
 ];
 const READY_AT = 80;   // a section counts as "ready for CAM" at 80%
@@ -1588,6 +1594,7 @@ const REVIEW_COPY = {
 };
 
 function statusOf(p){
+  if (p === null) return ['none','Loading…'];
   if (p >= 95) return ['done','Ready'];
   if (p >= READY_AT) return ['done','Ready'];
   if (p >= 40) return ['prog','In progress'];
@@ -1618,8 +1625,13 @@ function resolveRequest(t){
 }
 
 function renderRoad(){
-  const overall = Math.round(SECTIONS.reduce((s,x)=>s+x.pct,0)/SECTIONS.length);
-  const ready = SECTIONS.filter(s=>s.pct>=READY_AT).length;
+  /* Sections still waiting on their live fetch (pct:null) are left out of
+     the aggregate stats rather than counted as 0 -- otherwise the overall
+     ring/ready-count would flash a too-low number for a moment on every
+     load, the same stale-flash problem this loading state is meant to fix. */
+  const loaded = SECTIONS.filter(s=>s.pct !== null);
+  const overall = loaded.length ? Math.round(loaded.reduce((s,x)=>s+x.pct,0)/loaded.length) : 0;
+  const ready = loaded.filter(s=>s.pct>=READY_AT).length;
   const circ = 2*Math.PI*17;
   document.getElementById('ringfg').setAttribute('stroke-dasharray', (circ*overall/100)+' '+circ);
   document.getElementById('ringtxt').textContent = overall+'%';
@@ -1632,13 +1644,15 @@ function renderRoad(){
   + '<span class="cm-bar"><i style="width:'+Math.round(verified/SECTIONS.length*100)+'%"></i></span>'
   + '<span class="cm-n">'+verified+' of '+SECTIONS.length+'</span>';
 
-  const gaps = SECTIONS.filter(s=>s.pct<READY_AT).map(s=>s.name.toLowerCase());
+  const gaps = loaded.filter(s=>s.pct<READY_AT).map(s=>s.name.toLowerCase());
   document.getElementById('road-sub').innerHTML = gaps.length
     ? 'Finish <b>'+gaps.join('</b>, <b>')+'</b> and CAM can autofill most of your applications. This is what is on file, not an admission prediction.'
     : 'Everything CAM needs is on file. Nice work.';
 
   document.getElementById('secs').innerHTML = SECTIONS.map(s=>{
     const [cls,label] = statusOf(s.pct);
+    const pctText = s.pct === null ? '…' : s.pct+'%';
+    const barWidth = s.pct === null ? 0 : s.pct;
     const rv = REVIEW_COPY[s.review] ? REVIEW_COPY[s.review](s) : null;
     const rvHTML = rv
       ? (rv.act
@@ -1648,8 +1662,8 @@ function renderRoad(){
     return `<div class="sec" onclick="${s.key==='majors'?"showScreen('majors')":`toast('Opens: ${s.name}')`}">
       <div class="n">${s.name}</div>
       <div class="st ${cls}">${label}</div>
-      <div class="pbar"><i class="${cls==='prog'?'':cls}" style="width:${s.pct}%"></i></div>
-      <div class="pct">${s.pct}%</div>
+      <div class="pbar"><i class="${cls==='prog'?'':cls}" style="width:${barWidth}%"></i></div>
+      <div class="pct">${pctText}</div>
       <div class="miss">${s.missing}</div>
       ${rvHTML}
       <div class="go">${s.go} →</div>
@@ -1658,13 +1672,15 @@ function renderRoad(){
   if (bootDone) renderGrowth();
 }
 renderRoad();
-/* Profile/Courses & Grades/Activities & Honors/Major Interests stay the
-   mock (no real data source wired up for them yet) -- Colleges and Tests
-   are the two sections with a real, already-queried backend behind them. */
+/* Courses & Grades/Activities & Honors/Major Interests stay the mock (no
+   real data source wired up for them yet) -- Profile, Colleges and Tests
+   are the sections with a real, already-queried backend behind them. */
 async function loadReadiness(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
   catch (e) { return; }
+  const profileSection = SECTIONS.find(s=>s.key==='profile');
+  if (profileSection){ profileSection.pct = data.profile.pct; profileSection.missing = data.profile.missing; }
   const testsSection = SECTIONS.find(s=>s.key==='tests');
   if (testsSection){ testsSection.pct = data.tests.pct; testsSection.missing = data.tests.missing; }
   const collegesSection = SECTIONS.find(s=>s.key==='colleges');
@@ -3046,7 +3062,10 @@ async function saveEvent(){
 
 const STREAK_WEEKS = 3;   /* server-derived: weeks with at least one status change or add */
 
-function overallPct(){ return Math.round(SECTIONS.reduce((s,x)=>s+x.pct,0)/SECTIONS.length); }
+function overallPct(){
+  const loaded = SECTIONS.filter(s=>s.pct !== null);
+  return loaded.length ? Math.round(loaded.reduce((s,x)=>s+x.pct,0)/loaded.length) : 0;
+}
 function sectionPct(key){ const s=SECTIONS.find(x=>x.key===key); return s?s.pct:0; }
 
 /* Explorer -> Builder -> Applicant. Applicant unlocks at READY_AT overall. */
@@ -3064,14 +3083,14 @@ function milestones(){
   if (sectionPct('profile') >= 60)    out.push([true,  'Profile 60%']);
   if (sectionPct('majors')  >= 80)    out.push([true,  'Majors picked']);
   if (done >= 1)                      out.push([true,  done+' task'+(done===1?'':'s')+' finished']);
-  const nearest = SECTIONS.filter(x=>x.pct<READY_AT).sort((a,b)=>b.pct-a.pct)[0];
+  const nearest = SECTIONS.filter(x=>x.pct!==null && x.pct<READY_AT).sort((a,b)=>b.pct-a.pct)[0];
   if (nearest) out.push([false, 'Next: '+nearest.go.toLowerCase()]);
   return out;
 }
 
 function renderMomentum(){
   const o = overallPct(), lvl = levelOf();
-  const behind = SECTIONS.filter(s=>s.pct<READY_AT);
+  const behind = SECTIONS.filter(s=>s.pct!==null && s.pct<READY_AT);
   /* "next" is the section closest to ready, not the emptiest one. Two points
      from done is a better thing to be told about than eighty.                */
   const nearest = [...behind].sort((a,b)=>b.pct-a.pct)[0];

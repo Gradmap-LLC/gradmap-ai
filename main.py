@@ -305,11 +305,16 @@ app = FastAPI()
 # Dev-only: the dashboard HTML is opened straight from disk / a separate dev
 # server, so the browser treats it as a different origin from this API.
 # Tighten this to the real dashboard origin before deploying.
+# allow_private_network is required on top of that: Chrome's Private Network
+# Access check treats a file:// page as a public/unknown address space, and
+# blocks (client-side, after a 400 on the preflight) its fetches to a private
+# address like 127.0.0.1 unless the server explicitly opts in here.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_private_network=True,
 )
 
 
@@ -324,6 +329,138 @@ def get_college_list(student_id: str):
 # sections with a real, already-queried data source behind them.
 
 COLLEGE_LIST_TARGET_MIN = 8  # "most students land on 8-12" -- reaching the low end counts as fully ready
+
+
+# Profile spans four tables. personal_information.id happens to equal its own
+# student_id (that's what STUDENT_SNAPSHOT_SQL joins on above), but
+# demographics/contact_details/citizenship each have their own independent
+# `id` primary key -- joining those on `id` silently pulls the wrong
+# student's row, so this joins on student_id instead.
+PROFILE_READINESS_SQL = """
+SELECT
+    pi.first_name, pi.last_name, pi.dob, pi.country, pi.is_have_legal_name,
+    pi.sex, pi.sex_self_describe, pi.sex_self_consider,
+    pi.address, pi.address_line_1, pi.city, pi.state, pi.zip_code,
+    pi.is_should_send_mail, pi.is_share_different_first_name,
+    pi.is_different_first_name_pronouns_as_he,
+    pi.is_different_first_name_pronouns_as_she,
+    pi.is_different_first_name_pronouns_as_they,
+    pi.is_different_first_name_pronouns_as_other,
+    d.us_armed_forces_status, d.is_dependent_us_military, d.all_apply_array,
+    d.is_consider_hispanic_latino, d.best_group_latino_background_array,
+    d.best_group_describe_racial_background_array,
+    d.number_language_proficient, d.language_array,
+    cd.phone_number, cd.country_code, cd.is_authorized_text_message_sent,
+    cd.is_allowed_share_contact, cd.is_agree_csu_term,
+    c.country AS citizenship_country, c.is_have_us_social_security_number,
+    c.is_graduated_california_high_school, c.is_participate_cbo, c.your_cbo_array,
+    c.is_financial_qualify_fee_waiver, c.indicator_economic_fee_waiver_array,
+    c.csu_info AS citizenship_csu_info
+FROM personal_information pi
+LEFT JOIN demographics d ON d.student_id = pi.student_id
+LEFT JOIN contact_details cd ON cd.student_id = pi.student_id
+LEFT JOIN citizenship c ON c.student_id = pi.student_id
+WHERE pi.student_id = %s
+"""
+
+PROFILE_PRONOUN_FIELDS = [
+    "is_different_first_name_pronouns_as_he",
+    "is_different_first_name_pronouns_as_she",
+    "is_different_first_name_pronouns_as_they",
+    "is_different_first_name_pronouns_as_other",
+]
+
+# CAASPP release + related certifications/authorizations. These all live as
+# keys inside citizenship.csu_info -- a single free-form JSON blob, not their
+# own columns -- confirmed against student_id 13's live data.
+CAASPP_RELEASE_FIELDS = {
+    "is_certify": "certification statement",
+    "hereby_authorize_CD_release_CAASPP": "CAASPP release authorization",
+    "is_authorize_CSU_release_contact_information": "release contact information authorization",
+    "is_authorize_CSU_release_my_application": "release application authorization",
+    "authorize_release_CASSID_for_tracking_UC_application": "release student ID for UC tracking authorization",
+    "agree_with_guiding_principles": "guiding principles agreement",
+}
+
+
+def _is_filled(value):
+    """Booleans and numbers count as answered regardless of their value --
+    only NULL or an empty/whitespace string means the field was never filled
+    in."""
+    if value is None:
+        return False
+    if isinstance(value, str) and value.strip() == "":
+        return False
+    return True
+
+
+def _fetch_profile_readiness_row(student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(PROFILE_READINESS_SQL, (student_id,))
+            return cursor.fetchone()
+
+
+def _compute_profile_readiness(student_id):
+    row = _fetch_profile_readiness_row(student_id)
+    if row is None:
+        return {"pct": 0, "missing": "No profile on file yet."}
+
+    checks = [
+        ("first name", _is_filled(row["first_name"])),
+        ("last name", _is_filled(row["last_name"])),
+        ("date of birth", _is_filled(row["dob"])),
+        ("country", _is_filled(row["country"])),
+        ("legal name question", _is_filled(row["is_have_legal_name"])),
+        ("sex", _is_filled(row["sex"])),
+        ("sex self-description", _is_filled(row["sex_self_describe"])),
+        ("sexual orientation", _is_filled(row["sex_self_consider"])),
+        ("address", _is_filled(row["address"])),
+        ("address line 1", _is_filled(row["address_line_1"])),
+        ("city", _is_filled(row["city"])),
+        ("state", _is_filled(row["state"])),
+        ("zip code", _is_filled(row["zip_code"])),
+        ("mailing preference", _is_filled(row["is_should_send_mail"])),
+        ("different first name question", _is_filled(row["is_share_different_first_name"])),
+        ("armed forces status", _is_filled(row["us_armed_forces_status"])),
+        ("military affiliation", _is_filled(row["is_dependent_us_military"])),
+        ("military/family questions", _is_filled(row["all_apply_array"])),
+        ("Hispanic/Latino question", _is_filled(row["is_consider_hispanic_latino"])),
+        ("Latino background", _is_filled(row["best_group_latino_background_array"])),
+        ("racial background", _is_filled(row["best_group_describe_racial_background_array"])),
+        ("number of languages", _is_filled(row["number_language_proficient"])),
+        ("language details", _is_filled(row["language_array"])),
+        ("phone number", _is_filled(row["phone_number"])),
+        ("phone country code", _is_filled(row["country_code"])),
+        ("text message authorization", _is_filled(row["is_authorized_text_message_sent"])),
+        ("contact sharing authorization", _is_filled(row["is_allowed_share_contact"])),
+        ("CSU terms agreement", _is_filled(row["is_agree_csu_term"])),
+        ("citizenship country", _is_filled(row["citizenship_country"])),
+        ("Social Security number question", _is_filled(row["is_have_us_social_security_number"])),
+        ("high school graduation status", _is_filled(row["is_graduated_california_high_school"])),
+        ("CBO participation question", _is_filled(row["is_participate_cbo"])),
+        ("fee waiver eligibility question", _is_filled(row["is_financial_qualify_fee_waiver"])),
+        ("fee waiver details", _is_filled(row["indicator_economic_fee_waiver_array"])),
+    ]
+
+    csu_info = _decode_json_value(row["citizenship_csu_info"])
+    if not isinstance(csu_info, dict):
+        csu_info = {}
+    for field, label in CAASPP_RELEASE_FIELDS.items():
+        checks.append((label, _is_filled(csu_info.get(field))))
+
+    if row["is_share_different_first_name"]:
+        checks.append(("preferred pronoun", any(row[field] for field in PROFILE_PRONOUN_FIELDS)))
+
+    if row["is_participate_cbo"]:
+        checks.append(("CBO details", _is_filled(row["your_cbo_array"])))
+
+    missing = [label for label, complete in checks if not complete]
+    pct = round((len(checks) - len(missing)) / len(checks) * 100)
+
+    if not missing:
+        return {"pct": 100, "missing": "Complete!"}
+    return {"pct": pct, "missing": "Some things are missing from your profile!"}
 
 
 def _compute_colleges_readiness(student_id):
@@ -357,6 +494,7 @@ def _compute_tests_readiness(student_id):
 @app.get("/students/{student_id}/readiness")
 def get_readiness(student_id: str):
     return {
+        "profile": _compute_profile_readiness(student_id),
         "colleges": _compute_colleges_readiness(student_id),
         "tests": _compute_tests_readiness(student_id),
     }
