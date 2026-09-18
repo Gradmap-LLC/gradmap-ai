@@ -2,6 +2,7 @@ import argparse
 import html
 import json
 import os
+from datetime import date
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -90,6 +91,7 @@ SELECT
     st.future_testing_date_1 AS sat_future_testing_date_1,
     hs.culmative_gpa,
     hs.gpa_weighting,
+    hs.high_school_array,
     ah.activity_array,
     ah.honor_array,
     pm.status,
@@ -131,6 +133,35 @@ def _decode_json_value(value):
     return value
 
 
+def _first_high_school_entry(raw_high_school_array):
+    """high_school_array holds one entry per school the student attended (a
+    transfer student can have more than one); we only need whichever school's
+    term system applies now, so take the first entry, matching how a student
+    with a single school (the common case) is naturally structured."""
+    decoded = _decode_json_value(raw_high_school_array)
+    if isinstance(decoded, list) and decoded and isinstance(decoded[0], dict):
+        return decoded[0]
+    return {}
+
+
+def _normalize_term_system(classes_schedule):
+    """classes_schedule is free-ish text from the intake form (seen in real
+    data: 'Semester (2 final grades per year)', 'Semesters', 'Quarters',
+    'Full year (1 final grade per year)', empty, or missing entirely) --
+    normalize by keyword rather than exact match. Defaults to 'semester',
+    the most common real value, when nothing recognizable is on file."""
+    text = (classes_schedule or "").lower()
+    if "quarter" in text:
+        return "quarter"
+    if "trimester" in text:
+        return "trimester"
+    if "semester" in text:
+        return "semester"
+    if "full" in text:
+        return "full_year"
+    return "semester"
+
+
 def _row_to_snapshot(row):
     return {
         "id": row["id"],
@@ -153,6 +184,7 @@ def _row_to_snapshot(row):
         "high_school": {
             "culmative_gpa": row["culmative_gpa"],
             "gpa_weighting": row["gpa_weighting"],
+            "classes_schedule": _first_high_school_entry(row["high_school_array"]).get("classes_schedule"),
         },
         "activity_honor": {
             "activity_array": _decode_json_value(row["activity_array"]),
@@ -328,6 +360,56 @@ def get_readiness(student_id: str):
         "colleges": _compute_colleges_readiness(student_id),
         "tests": _compute_tests_readiness(student_id),
     }
+
+
+# --- Class year / grade / season -------------------------------------------
+# US school year runs roughly Aug-May; a student who finishes high school in
+# calendar year Y is in 12th grade for the school year ending in Y, 11th for
+# the one ending in Y-1, etc. July/August is treated as the start of the next
+# school year (matches when most schools actually resume).
+
+def _ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _compute_class_year_info(year_finish_high_school):
+    if year_finish_high_school is None:
+        return {"year_finish_high_school": None, "grade": None, "grade_label": None, "season": None}
+
+    today = date.today()
+    school_year_end = today.year + 1 if today.month >= 7 else today.year
+    grade = 12 - (year_finish_high_school - school_year_end)
+
+    if today.month in (8, 9, 10, 11, 12):
+        season = "Fall"
+    elif today.month in (6, 7):
+        season = "Summer"
+    else:
+        season = "Spring"
+
+    grade_label = f"{_ordinal(grade)} grade" if 1 <= grade <= 12 else ("Graduated" if grade > 12 else None)
+    return {
+        "year_finish_high_school": year_finish_high_school,
+        "grade": grade,
+        "grade_label": grade_label,
+        "season": season,
+    }
+
+
+@app.get("/students/{student_id}/class-year")
+def get_class_year(student_id: str):
+    try:
+        snapshot = _fetch_student_snapshot(student_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    info = _compute_class_year_info(snapshot["personal_information"]["year_finish_high_school"])
+    info["term_system"] = _normalize_term_system(snapshot["high_school"]["classes_schedule"])
+    return info
 
 
 class RecommendationStatusUpdate(BaseModel):

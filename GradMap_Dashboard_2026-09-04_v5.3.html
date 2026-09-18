@@ -1031,8 +1031,8 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
           <div class="snap">
             <div class="s">
               <div class="k">Class year</div>
-              <div class="v">Class of 2027</div>
-              <div class="m">11th grade · Fall</div>
+              <div class="v" id="class-year-v">Class of &ndash;</div>
+              <div class="m" id="class-year-m"></div>
             </div>
             <div class="s">
               <div class="k">GPA</div>
@@ -1468,6 +1468,22 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
    see GradMap_Dashboard_v4_Feature_Doc.md for the field-by-field map.
    ===================================================================== */
 
+/* API_BASE/apiFetch have to come first, before anything else in this file --
+   several boot-time loaders (loadClassYear, loadReadiness,
+   checkGoogleCalendarStatus, checkAppleCalendarStatus, loadOwnEvents) call
+   apiFetch() synchronously as soon as the script runs, and apiFetch's body
+   reads API_BASE. A `const` isn't hoisted with a value the way a function
+   declaration is, so if this lived further down (as it used to, in the
+   Suggestions section) every one of those early calls would throw
+   "Cannot access 'API_BASE' before initialization" -- silently, since they
+   all wrap the call in try/catch. That's exactly what was happening. */
+const API_BASE = 'http://127.0.0.1:8000';
+async function apiFetch(path, opts){
+  const res = await fetch(API_BASE + path, {headers:{'Content-Type':'application/json'}, ...opts});
+  if (!res.ok) throw new Error(`${(opts && opts.method) || 'GET'} ${path} failed: ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+
 /* ---------- 0. Date & time -------------------------------------------
    The app reads the student's LOCAL date directly. No need to tell it.
    Everything time-sensitive on this page (the stale-grades nudge, the
@@ -1485,15 +1501,28 @@ let calCursor = new Date(NOW.getFullYear(), NOW.getMonth(), 1);
 const STUDENT_ID = 13;
 
 const STUDENT = {
-  classYear: 2027,
-  gradeLabel: '11th grade · Fall',
-  termSystem: 'semester',              // semester | quarter | trimester
+  termSystem: 'semester',              // full_year | semester | quarter | trimester -- real value arrives via loadClassYear()
   gradesLastUpdated: '2026-05-28',     // profile.courses_grades.last_updated
 };
+/* Class year, grade, season and term system are all computed server-side
+   from personal_information.year_finish_high_school and
+   high_school.high_school_array's classes_schedule (main.py's /class-year)
+   -- real per-student data, not a guess made in the browser. */
+async function loadClassYear(){
+  const v = document.getElementById('class-year-v'), m = document.getElementById('class-year-m');
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/class-year`); }
+  catch (e) { return; }
+  if (v) v.textContent = data.year_finish_high_school ? 'Class of ' + data.year_finish_high_school : 'Class year not on file';
+  if (m) m.textContent = [data.grade_label, data.season].filter(Boolean).join(' · ');
+  if (data.term_system){ STUDENT.termSystem = data.term_system; checkStaleGrades(); }
+}
+loadClassYear();
 
 /* Term anchors: when a student on this system would have new grades.
    month is 0-indexed. Backend can override per school calendar.        */
 const TERM_ANCHORS = {
+  full_year: [{m:5,  d:15, label:'school year'}],
   semester:  [{m:0,  d:20, label:'first semester'}, {m:5,  d:15, label:'second semester'}],
   quarter:   [{m:10, d:10, label:'first quarter'},  {m:1, d:5, label:'second quarter'},
               {m:3,  d:20, label:'third quarter'},  {m:5, d:15, label:'fourth quarter'}],
@@ -2097,12 +2126,6 @@ async function autoRefill(){
 renderTasks();
 
 /* ---------- 5. Suggestions ---------- */
-const API_BASE = 'http://127.0.0.1:8000';
-async function apiFetch(path, opts){
-  const res = await fetch(API_BASE + path, {headers:{'Content-Type':'application/json'}, ...opts});
-  if (!res.ok) throw new Error(`${(opts && opts.method) || 'GET'} ${path} failed: ${res.status}`);
-  return res.status === 204 ? null : res.json();
-}
 function escHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
