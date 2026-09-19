@@ -1508,6 +1508,12 @@ const STUDENT = {
    from personal_information.year_finish_high_school and
    high_school.high_school_array's classes_schedule (main.py's /class-year)
    -- real per-student data, not a guess made in the browser. */
+/* term system has two possible sources: the high-school-level schedule from
+   /class-year, and the per-course scheduling system reported specifically for
+   Courses & Grades (course_scheduling_system_is_using, via /readiness below).
+   The latter is the more specific, live source for this feature, so once it
+   arrives it wins and this fallback stops overwriting it. */
+let termSystemFromCourses = false;
 async function loadClassYear(){
   const v = document.getElementById('class-year-v'), m = document.getElementById('class-year-m');
   let data;
@@ -1515,7 +1521,7 @@ async function loadClassYear(){
   catch (e) { return; }
   if (v) v.textContent = data.year_finish_high_school ? 'Class of ' + data.year_finish_high_school : 'Class year not on file';
   if (m) m.textContent = [data.grade_label, data.season].filter(Boolean).join(' · ');
-  if (data.term_system){ STUDENT.termSystem = data.term_system; checkStaleGrades(); }
+  if (data.term_system && !termSystemFromCourses){ STUDENT.termSystem = data.term_system; checkStaleGrades(); }
 }
 loadClassYear();
 
@@ -1562,16 +1568,16 @@ const COUNSELOR = {name:'Ms. Reyes', school:'Lincoln High School'};
    verified  the counselor signed it off
    changes   the counselor sent it back, and a task exists in the plan for it   */
 let bootDone = false;   /* the growth cards read TASKS, which is defined further down */
-/* profile/tests/colleges are backed by a live /readiness call (loadReadiness,
-   below) -- they start at pct:null ("still loading") rather than a guessed
-   number, so the card shows a neutral loading state instead of a real-looking
-   value that then visibly snaps to the correct one a moment later. courses/
-   activities/majors have no live data source yet, so their numbers are the
-   real (mocked) value from the start -- nothing to flash. */
+/* profile/tests/colleges/courses are backed by a live /readiness call
+   (loadReadiness, below) -- they start at pct:null ("still loading") rather
+   than a guessed number, so the card shows a neutral loading state instead of
+   a real-looking value that then visibly snaps to the correct one a moment
+   later. activities/majors have no live data source yet, so their numbers
+   are the real (mocked) value from the start -- nothing to flash. */
 const SECTIONS = [
   {key:'profile',    name:'Profile',              pct:null, missing:'Loading…',                                                    go:'Review',
    review:'verified',  on:'Aug 30'},
-  {key:'courses',    name:'Courses & Grades',     pct:78,  missing:'Junior spring grades not entered yet.',                        go:'Add grades',
+  {key:'courses',    name:'Courses & Grades',     pct:null, missing:'Loading…',                                                    go:'Add grades',
    review:'submitted', on:'Aug 29'},
   {key:'tests',      name:'Tests',                pct:null, missing:'Loading…',                                                    go:'Add a test',
    review:'none',      on:''},
@@ -1672,8 +1678,8 @@ function renderRoad(){
   if (bootDone) renderGrowth();
 }
 renderRoad();
-/* Courses & Grades/Activities & Honors/Major Interests stay the mock (no
-   real data source wired up for them yet) -- Profile, Colleges and Tests
+/* Activities & Honors/Major Interests stay the mock (no real data source
+   wired up for them yet) -- Profile, Colleges, Tests and Courses & Grades
    are the sections with a real, already-queried backend behind them. */
 async function loadReadiness(){
   let data;
@@ -1685,6 +1691,16 @@ async function loadReadiness(){
   if (testsSection){ testsSection.pct = data.tests.pct; testsSection.missing = data.tests.missing; }
   const collegesSection = SECTIONS.find(s=>s.key==='colleges');
   if (collegesSection){ collegesSection.pct = data.colleges.pct; collegesSection.missing = data.colleges.missing; }
+  const coursesSection = SECTIONS.find(s=>s.key==='courses');
+  if (coursesSection){
+    coursesSection.pct = data.courses.pct;
+    coursesSection.missing = data.courses.missing;
+    if (data.courses.term_system){
+      STUDENT.termSystem = data.courses.term_system;
+      termSystemFromCourses = true;
+      checkStaleGrades();
+    }
+  }
   renderRoad();
 }
 loadReadiness();

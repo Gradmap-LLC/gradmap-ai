@@ -324,8 +324,8 @@ def get_college_list(student_id: str):
 
 
 # --- Road to CAM: real Colleges/Tests readiness ---------------------------
-# Profile/Courses & Grades/Activities & Honors/Major Interests stay the
-# hand-authored mock in the dashboard for now -- these two are the only
+# Activities & Honors/Major Interests stay the hand-authored mock in the
+# dashboard for now -- Profile, Colleges, Tests and Courses & Grades are the
 # sections with a real, already-queried data source behind them.
 
 COLLEGE_LIST_TARGET_MIN = 8  # "most students land on 8-12" -- reaching the low end counts as fully ready
@@ -491,12 +491,144 @@ def _compute_tests_readiness(student_id):
     return {"pct": 0, "missing": "No test date on record. Add a sitting or mark test-optional."}
 
 
+# --- Courses & Grades readiness ---------------------------------------------
+# course_general_info and grade_and_college_course are both one-row-per-student
+# tables, addressed by student_id (like sat_test/act_test, unlike
+# activity_honor's id-doubles-as-student-id convention). Only fields that are
+# actually required contribute to the percentage -- optional/free-form detail
+# (e.g. specify_language_instruction when it doesn't apply) never drags the
+# score down just because it's blank.
+
+COURSE_GENERAL_INFO_SQL = """
+SELECT
+    is_able_obtain_copy_transcript,
+    is_counselor_submit_transcript,
+    is_transcript_show_grade_completed,
+    is_counselor_submit_transcript_2,
+    is_take_high_school_math_in_grade_7_or_8,
+    is_take_high_school_english_in_grade_7_or_8,
+    is_attend_school_outside_us_6_through_8,
+    language_instruction,
+    specify_language_instruction,
+    take_high_school_math_array,
+    take_high_school_english_array
+FROM course_general_info
+WHERE student_id = %s
+"""
+
+GRADE_AND_COLLEGE_COURSE_SQL = """
+SELECT
+    grade_9_course_array, is_reported_all_grade_9,
+    grade_10_course_array, is_reported_all_grade_10,
+    grade_11_course_array, is_reported_all_grade_11,
+    grade_12_course_array, is_reported_all_grade_12,
+    college_course_array, is_finish_adding_all_college_grade,
+    course_scheduling_system_is_using
+FROM grade_and_college_course
+WHERE student_id = %s
+"""
+
+
+def _fetch_course_general_info_row(student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(COURSE_GENERAL_INFO_SQL, (student_id,))
+            return cursor.fetchone()
+
+
+def _fetch_grade_and_college_course_row(student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(GRADE_AND_COLLEGE_COURSE_SQL, (student_id,))
+            return cursor.fetchone()
+
+
+def _has_real_entries(raw_array, name_field):
+    """Course arrays keep a placeholder entry (blank name field) once a row
+    exists but nothing's been entered yet, so an empty-looking array isn't
+    necessarily [] -- only an entry with an actual name counts. The 7th/8th
+    grade math/English arrays use `name`; the per-grade course arrays use
+    `courseName` -- different shapes, same intake form family."""
+    decoded = _decode_json_value(raw_array)
+    if not isinstance(decoded, list):
+        return False
+    return any(isinstance(entry, dict) and (entry.get(name_field) or "").strip() for entry in decoded)
+
+
+def _has_real_courses(raw_course_array):
+    return _has_real_entries(raw_course_array, "courseName")
+
+
+def _current_grade_level(student_id):
+    try:
+        snapshot = _fetch_student_snapshot(student_id)
+    except ValueError:
+        return None
+    grade = _compute_class_year_info(snapshot["personal_information"]["year_finish_high_school"])["grade"]
+    return grade if isinstance(grade, int) else None
+
+
+def _compute_courses_readiness(student_id):
+    general = _fetch_course_general_info_row(student_id)
+    grades_row = _fetch_grade_and_college_course_row(student_id)
+    if general is None and grades_row is None:
+        return {"pct": 0, "missing": "No course information on file yet.", "term_system": None}
+
+    checks = []
+
+    if general is not None:
+        checks += [
+            ("transcript availability question", _is_filled(general["is_able_obtain_copy_transcript"])),
+            ("counselor transcript submission question", _is_filled(general["is_counselor_submit_transcript"])),
+            ("transcript grade completion question", _is_filled(general["is_transcript_show_grade_completed"])),
+            ("counselor transcript submission confirmation", _is_filled(general["is_counselor_submit_transcript_2"])),
+            ("7th/8th grade math question", _is_filled(general["is_take_high_school_math_in_grade_7_or_8"])),
+            ("7th/8th grade English question", _is_filled(general["is_take_high_school_english_in_grade_7_or_8"])),
+            ("schooling outside the US (grades 6-8) question", _is_filled(general["is_attend_school_outside_us_6_through_8"])),
+            ("language of instruction", _is_filled(general["language_instruction"])),
+        ]
+        if general["is_take_high_school_math_in_grade_7_or_8"]:
+            checks.append(("7th/8th grade math course detail", _has_real_entries(general["take_high_school_math_array"], "name")))
+        if general["is_take_high_school_english_in_grade_7_or_8"]:
+            checks.append(("7th/8th grade English course detail", _has_real_entries(general["take_high_school_english_array"], "name")))
+        if (general["language_instruction"] or "").strip().lower() == "other":
+            checks.append(("language of instruction detail", _is_filled(general["specify_language_instruction"])))
+
+    term_system = None
+    if grades_row is not None:
+        checks.append(("course scheduling system", _is_filled(grades_row["course_scheduling_system_is_using"])))
+        term_system = _normalize_term_system(grades_row["course_scheduling_system_is_using"])
+
+        # Only grades the student has actually reached count against them --
+        # a 10th grader isn't missing 11th/12th grade courses yet.
+        current_grade = _current_grade_level(student_id)
+        for level in (9, 10, 11, 12):
+            if current_grade is not None and current_grade < level:
+                continue
+            checks.append((f"grade {level} courses reported", bool(grades_row[f"is_reported_all_grade_{level}"])))
+            checks.append((f"grade {level} course list", _has_real_courses(grades_row[f"grade_{level}_course_array"])))
+
+        if _has_real_courses(grades_row["college_course_array"]):
+            checks.append(("college course list completion", bool(grades_row["is_finish_adding_all_college_grade"])))
+
+    if not checks:
+        return {"pct": 0, "missing": "No course information on file yet.", "term_system": term_system}
+
+    missing = [label for label, complete in checks if not complete]
+    pct = round((len(checks) - len(missing)) / len(checks) * 100)
+
+    if not missing:
+        return {"pct": 100, "missing": "Complete!", "term_system": term_system}
+    return {"pct": pct, "missing": "Some things are missing from your courses & grades.", "term_system": term_system}
+
+
 @app.get("/students/{student_id}/readiness")
 def get_readiness(student_id: str):
     return {
         "profile": _compute_profile_readiness(student_id),
         "colleges": _compute_colleges_readiness(student_id),
         "tests": _compute_tests_readiness(student_id),
+        "courses": _compute_courses_readiness(student_id),
     }
 
 
