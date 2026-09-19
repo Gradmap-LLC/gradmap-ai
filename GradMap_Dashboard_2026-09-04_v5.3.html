@@ -1573,14 +1573,14 @@ checkStaleGrades();
    verified  the counselor signed it off
    changes   the counselor sent it back, and a task exists in the plan for it   */
 let bootDone = false;   /* the growth cards read TASKS, which is defined further down */
-/* profile/tests/colleges/courses/activities are backed by a live /readiness
-   call (loadReadiness, below) -- they start at pct:null ("still loading")
-   rather than a guessed number, so the card shows a neutral loading state
-   instead of a real-looking value that then visibly snaps to the correct one
-   a moment later. majors has no live data source yet, so its number is the
-   real (mocked) value from the start -- nothing to flash. */
+/* Every section here is backed by a live /readiness call (loadReadiness,
+   below) -- they start at pct:null ("still loading") rather than a guessed
+   number, so the card shows a neutral loading state instead of a real-looking
+   value that then visibly snaps to the correct one a moment later. */
 const SECTIONS = [
   {key:'profile',    name:'Profile',              pct:null, missing:'Loading…',                                                    go:'Review',
+   review:'none', on:'', counselorVerified:false},
+  {key:'family',     name:'Family',                pct:null, missing:'Loading…',                                                    go:'Review',
    review:'none', on:'', counselorVerified:false},
   {key:'courses',    name:'Courses & Grades',     pct:null, missing:'Loading…',                                                    go:'Add grades',
    review:'none', on:'', counselorVerified:false},
@@ -1588,8 +1588,6 @@ const SECTIONS = [
    review:'none', on:'', counselorVerified:false},
   {key:'activities', name:'Activities & Honors',  pct:null, missing:'Loading…',                                                    go:'Add detail',
    review:'none', on:'', counselorVerified:false},
-  {key:'majors',     name:'Major Interests',      pct:85,  missing:'Two majors picked. Test them with an activity.',              go:'Open explorer',
-   review:'none',      on:''},
   {key:'colleges',   name:'Colleges',             pct:null, missing:'Loading…',                                                    go:'Build list',
    review:'none',      on:''}
 ];
@@ -1670,7 +1668,7 @@ function renderRoad(){
     // review badge (Verified/With counselor/Send to counselor/etc.) is
     // hidden for now -- REVIEW_COPY/sendForReview/resolveRequest are left in
     // place to bring back later, just not rendered onto the card.
-    return `<div class="sec" onclick="${s.key==='majors'?"showScreen('majors')":`toast('Opens: ${s.name}')`}">
+    return `<div class="sec" onclick="toast('Opens: ${s.name}')">
       <div class="n">${s.name}</div>
       <div class="st ${cls}">${label}</div>
       <div class="pbar"><i class="${cls==='prog'?'':cls}" style="width:${barWidth}%"></i></div>
@@ -1682,9 +1680,8 @@ function renderRoad(){
   if (bootDone) renderGrowth();
 }
 renderRoad();
-/* Major Interests stays the mock (no real data source wired up for it yet)
-   -- Profile, Colleges, Tests, Courses & Grades and Activities & Honors are
-   the sections with a real, already-queried backend behind them. */
+/* Every Road to CAM section is now backed by a real, already-queried
+   backend (Family reads household/parent_no1/parent_no2/siblings). */
 async function loadReadiness(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
@@ -1701,6 +1698,8 @@ async function loadReadiness(){
     testsSection.missing = data.tests.missing;
     testsSection.counselorVerified = !!data.tests.counselor_verified;
   }
+  const familySection = SECTIONS.find(s=>s.key==='family');
+  if (familySection){ familySection.pct = data.family.pct; familySection.missing = data.family.missing; }
   const collegesSection = SECTIONS.find(s=>s.key==='colleges');
   if (collegesSection){ collegesSection.pct = data.colleges.pct; collegesSection.missing = data.colleges.missing; }
   const coursesSection = SECTIONS.find(s=>s.key==='courses');
@@ -3133,7 +3132,6 @@ function milestones(){
   const out = [];
   const profilePct = sectionPct('profile');
   if (profilePct >= 60)                out.push([true,  'Profile '+profilePct+'%']);
-  if (sectionPct('majors')  >= 80)    out.push([true,  'Majors picked']);
   if (done >= 1)                      out.push([true,  done+' task'+(done===1?'':'s')+' finished']);
   const nearest = SECTIONS.filter(x=>x.pct!==null && x.pct<READY_AT).sort((a,b)=>b.pct-a.pct)[0];
   if (nearest) out.push([false, 'Next: '+nearest.go.toLowerCase()]);

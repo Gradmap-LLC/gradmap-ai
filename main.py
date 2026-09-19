@@ -611,6 +611,144 @@ def _compute_streak_weeks(student_id):
     return weeks
 
 
+# --- Family readiness --------------------------------------------------------
+# household/parent_no1/parent_no2/siblings are each one row per student,
+# addressed by student_id. Step-parent detail only matters when the household
+# actually lists step-parents; a parent's employment detail only matters
+# while that parent is living; sibling detail only matters once the student
+# has said they have siblings at all -- same "required only if chosen"
+# convention as the other sections.
+
+HOUSEHOLD_SQL = """
+SELECT who_in_household_array, household_size, whom_live_permanently,
+       parent_martial_status, household_income, is_have_any_children,
+       highest_level_education_parent, how_many_children,
+       is_listing_step_parents, how_many_step_parents, legal_guardian,
+       year_of_divorce, csu_info
+FROM household
+WHERE student_id = %s
+"""
+
+PARENT_FIELDS_SQL = """
+SELECT is_parent_{n}_living, relationship_type, first_name, last_name,
+       occupation, highest_level_education, current_employer, job_title
+FROM parent_no{n}
+WHERE student_id = %s
+"""
+
+STEP_PARENT_FIELDS_SQL = """
+SELECT first_name, last_name, step_parent_relationship, step_parent_is_living
+FROM step_parent_no{n}
+WHERE student_id = %s
+"""
+
+SIBLINGS_SQL = "SELECT number_of_siblings, siblings_array FROM siblings WHERE student_id = %s"
+
+HOUSEHOLD_CSU_INFO_FIELDS = {
+    "household_income_information_statements": "household income statement",
+    "parent_gross_income": "parent gross income",
+    "parent_untaxed_income": "parent untaxed income",
+    "gross_income": "student gross income",
+    "untaxed_income": "student untaxed income",
+    "parent_1_highest_level_education": "parent 1 education level (financial section)",
+    "parent_2_highest_level_education": "parent 2 education level (financial section)",
+}
+
+
+def _is_meaningfully_filled(value):
+    """Same as _is_filled, but also treats the literal string "null" as
+    unfilled -- household.legal_guardian stores that as text, not a real
+    NULL, when the question hasn't been answered."""
+    if isinstance(value, str) and value.strip().lower() == "null":
+        return False
+    return _is_filled(value)
+
+
+def _fetch_family_row(sql, student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, (student_id,))
+            return cursor.fetchone()
+
+
+def _compute_family_readiness(student_id):
+    household = _fetch_family_row(HOUSEHOLD_SQL, student_id)
+    parent1 = _fetch_family_row(PARENT_FIELDS_SQL.format(n=1), student_id)
+    parent2 = _fetch_family_row(PARENT_FIELDS_SQL.format(n=2), student_id)
+    siblings = _fetch_family_row(SIBLINGS_SQL, student_id)
+
+    if household is None and parent1 is None and parent2 is None and siblings is None:
+        return {"pct": 0, "missing": "No family information on file yet."}
+
+    checks = []
+
+    if household is not None:
+        checks += [
+            ("household members question", _is_filled(household["who_in_household_array"])),
+            ("household size", _is_filled(household["household_size"])),
+            ("who the student lives with", _is_filled(household["whom_live_permanently"])),
+            ("parents' marital status", _is_filled(household["parent_martial_status"])),
+            ("household income", _is_filled(household["household_income"])),
+            ("student's own children question", _is_filled(household["is_have_any_children"])),
+            ("parents' highest level of education", _is_filled(household["highest_level_education_parent"])),
+            ("number of children in household", _is_filled(household["how_many_children"])),
+            ("step-parents question", _is_filled(household["is_listing_step_parents"])),
+            ("legal guardian", _is_meaningfully_filled(household["legal_guardian"])),
+        ]
+
+        if "divorce" in (household["parent_martial_status"] or "").lower() or "separat" in (household["parent_martial_status"] or "").lower():
+            checks.append(("year of divorce/separation", _is_filled(household["year_of_divorce"])))
+
+        listing_step_parents = _csu_bool(household["is_listing_step_parents"])
+        if listing_step_parents:
+            checks.append(("number of step-parents", _is_filled(household["how_many_step_parents"])))
+
+        csu_info = _decode_json_value(household["csu_info"])
+        if not isinstance(csu_info, dict):
+            csu_info = {}
+        for field, label in HOUSEHOLD_CSU_INFO_FIELDS.items():
+            checks.append((label, _is_filled(csu_info.get(field))))
+
+        if listing_step_parents:
+            for n in (1, 2):
+                step = _fetch_family_row(STEP_PARENT_FIELDS_SQL.format(n=n), student_id)
+                checks.append((f"step-parent {n} name", step is not None and _is_filled(step["first_name"]) and _is_filled(step["last_name"])))
+                checks.append((f"step-parent {n} relationship", step is not None and _is_filled(step["step_parent_relationship"])))
+
+    for n, parent in ((1, parent1), (2, parent2)):
+        if parent is None:
+            continue
+        is_living = parent[f"is_parent_{n}_living"]
+        checks += [
+            (f"parent {n} living status", _is_filled(is_living)),
+            (f"parent {n} relationship", _is_filled(parent["relationship_type"])),
+            (f"parent {n} first name", _is_filled(parent["first_name"])),
+            (f"parent {n} last name", _is_filled(parent["last_name"])),
+        ]
+        if is_living:
+            checks += [
+                (f"parent {n} occupation", _is_filled(parent["occupation"])),
+                (f"parent {n} education level", _is_filled(parent["highest_level_education"])),
+                (f"parent {n} employer", _is_filled(parent["current_employer"])),
+                (f"parent {n} job title", _is_filled(parent["job_title"])),
+            ]
+
+    if siblings is not None:
+        checks.append(("number of siblings", _is_filled(siblings["number_of_siblings"])))
+        if (siblings["number_of_siblings"] or 0) > 0:
+            checks.append(("sibling details", _has_real_entries(siblings["siblings_array"], "fullName")))
+
+    if not checks:
+        return {"pct": 0, "missing": "No family information on file yet."}
+
+    missing = [label for label, complete in checks if not complete]
+    pct = round((len(checks) - len(missing)) / len(checks) * 100)
+
+    if not missing:
+        return {"pct": 100, "missing": "Complete!"}
+    return {"pct": pct, "missing": "Some things are missing from your family information."}
+
+
 def _compute_colleges_readiness(student_id):
     total = _fetch_college_list(student_id)["total"]
     pct = min(100, round(total / COLLEGE_LIST_TARGET_MIN * 100)) if total else 0
@@ -1014,6 +1152,7 @@ def get_readiness(student_id: str):
 
     return {
         "profile": profile,
+        "family": _compute_family_readiness(student_id),
         "colleges": _compute_colleges_readiness(student_id),
         "tests": tests,
         "courses": courses,
