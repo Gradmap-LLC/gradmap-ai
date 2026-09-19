@@ -1568,12 +1568,12 @@ const COUNSELOR = {name:'Ms. Reyes', school:'Lincoln High School'};
    verified  the counselor signed it off
    changes   the counselor sent it back, and a task exists in the plan for it   */
 let bootDone = false;   /* the growth cards read TASKS, which is defined further down */
-/* profile/tests/colleges/courses are backed by a live /readiness call
-   (loadReadiness, below) -- they start at pct:null ("still loading") rather
-   than a guessed number, so the card shows a neutral loading state instead of
-   a real-looking value that then visibly snaps to the correct one a moment
-   later. activities/majors have no live data source yet, so their numbers
-   are the real (mocked) value from the start -- nothing to flash. */
+/* profile/tests/colleges/courses/activities are backed by a live /readiness
+   call (loadReadiness, below) -- they start at pct:null ("still loading")
+   rather than a guessed number, so the card shows a neutral loading state
+   instead of a real-looking value that then visibly snaps to the correct one
+   a moment later. majors has no live data source yet, so its number is the
+   real (mocked) value from the start -- nothing to flash. */
 const SECTIONS = [
   {key:'profile',    name:'Profile',              pct:null, missing:'Loading…',                                                    go:'Review',
    review:'verified',  on:'Aug 30'},
@@ -1581,7 +1581,7 @@ const SECTIONS = [
    review:'submitted', on:'Aug 29'},
   {key:'tests',      name:'Tests',                pct:null, missing:'Loading…',                                                    go:'Add a test',
    review:'none',      on:''},
-  {key:'activities', name:'Activities & Honors',  pct:58,  missing:'Robotics club logged, but no role or hours on it.',            go:'Add detail',
+  {key:'activities', name:'Activities & Honors',  pct:null, missing:'Loading…',                                                    go:'Add detail',
    review:'changes',   on:'Aug 28'},
   {key:'majors',     name:'Major Interests',      pct:85,  missing:'Two majors picked. Test them with an activity.',              go:'Open explorer',
    review:'none',      on:''},
@@ -1678,9 +1678,9 @@ function renderRoad(){
   if (bootDone) renderGrowth();
 }
 renderRoad();
-/* Activities & Honors/Major Interests stay the mock (no real data source
-   wired up for them yet) -- Profile, Colleges, Tests and Courses & Grades
-   are the sections with a real, already-queried backend behind them. */
+/* Major Interests stays the mock (no real data source wired up for it yet)
+   -- Profile, Colleges, Tests, Courses & Grades and Activities & Honors are
+   the sections with a real, already-queried backend behind them. */
 async function loadReadiness(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
@@ -1701,6 +1701,8 @@ async function loadReadiness(){
       checkStaleGrades();
     }
   }
+  const activitiesSection = SECTIONS.find(s=>s.key==='activities');
+  if (activitiesSection){ activitiesSection.pct = data.activities.pct; activitiesSection.missing = data.activities.missing; }
   renderRoad();
 }
 loadReadiness();

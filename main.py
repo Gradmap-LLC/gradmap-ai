@@ -77,6 +77,16 @@ DB_CONFIG = {
 }
 
 
+# act_test/sat_test/high_school/activity_honor each have their own
+# auto-increment `id` that does NOT line up with the student's id -- e.g. for
+# student_id 13, act_test's row has id 8, and the row with id 13 belongs to a
+# different student entirely. Join on each table's own `student_id` column
+# instead, never `id`, or this silently pulls another student's data.
+# programs_manager is different again: it's one row PER PROGRAM/application
+# (a student applying to several schools has several rows, addressed by
+# `program_id`, not `student_id`), so a plain join on student_id would fan
+# out into multiple rows here. The LATERAL picks the most recently updated
+# program as the representative one for this snapshot.
 STUDENT_SNAPSHOT_SQL = """
 SELECT
     pi.id,
@@ -102,11 +112,17 @@ SELECT
     pm.essays,
     pm.reminders
 FROM personal_information pi
-LEFT JOIN act_test at ON at.id = pi.id
-LEFT JOIN sat_test st ON st.id = pi.id
-LEFT JOIN high_school hs ON hs.id = pi.id
-LEFT JOIN activity_honor ah ON ah.id = pi.id
-LEFT JOIN programs_manager pm ON pm.program_id = pi.id
+LEFT JOIN act_test at ON at.student_id = pi.id
+LEFT JOIN sat_test st ON st.student_id = pi.id
+LEFT JOIN high_school hs ON hs.student_id = pi.id
+LEFT JOIN activity_honor ah ON ah.student_id = pi.id
+LEFT JOIN LATERAL (
+    SELECT status, application_form, recommendation_letters, transcripts, resume, essays, reminders
+    FROM programs_manager
+    WHERE programs_manager.student_id = pi.id
+    ORDER BY updated_at DESC NULLS LAST, id DESC
+    LIMIT 1
+) pm ON true
 WHERE pi.id = %s
 """
 
@@ -472,23 +488,128 @@ def _compute_colleges_readiness(student_id):
     }
 
 
+# test_general_info.all_tests_wish_report_array is the single source of truth
+# for which tests a student is reporting (it mirrors the "Indicate all tests
+# you wish to report" checkboxes) -- a test type left unchecked there is
+# simply not required, no matter how empty its own table is. All of these
+# tables are addressed by their own student_id column, queried directly
+# rather than through _fetch_student_snapshot's broader join.
+
+ALL_TEST_TYPE_KEYS = (
+    "is_SAT", "is_ACT", "is_AP_Subject", "is_IB_Subject", "is_CLEP",
+    "is_TOEFL", "is_PTE", "is_IELTS", "is_DuoLingo",
+)
+
+TEST_GENERAL_INFO_SQL = """
+SELECT is_wish_self_report_scores, all_tests_wish_report_array, is_promotion_within_educational_system
+FROM test_general_info
+WHERE student_id = %s
+"""
+
+SAT_TEST_READINESS_SQL = "SELECT is_have_sat_scores_report, future_testing_date_1 FROM sat_test WHERE student_id = %s"
+ACT_TEST_READINESS_SQL = "SELECT is_have_act_score_report, future_testing_date_1, have_taken_act_plus_writing_test FROM act_test WHERE student_id = %s"
+AP_SUBJECT_TEST_SQL = "SELECT is_have_ap_exam_report, number_of_ap_test_report FROM act_subject_test WHERE student_id = %s"
+IB_SUBJECT_TEST_SQL = "SELECT is_have_ib_exam_report, number_of_ib_test_report, is_completed_full_ib FROM ib_subject_test WHERE student_id = %s"
+CLEP_TEST_SQL = "SELECT id FROM clep_test WHERE student_id = %s"
+DOULINGO_TEST_SQL = "SELECT id FROM doulingo_test WHERE student_id = %s"
+IELTS_PTE_SQL = "SELECT is_not_required_pte_test, is_not_required_ielts FROM ielts_pte WHERE student_id = %s"
+OTHER_TEST_SQL = """
+SELECT is_not_required_toefl_test, is_have_advanced_level_exam_wish_report,
+       is_have_predicted_advanced_level_exam_wish_report
+FROM other_test
+WHERE student_id = %s
+"""
+
+
+def _fetch_test_row(sql, student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, (student_id,))
+            return cursor.fetchone()
+
+
 def _compute_tests_readiness(student_id):
-    try:
-        snapshot = _fetch_student_snapshot(student_id)
-    except ValueError:
-        return {"pct": 0, "missing": "No test date on record. Add a sitting or mark test-optional."}
+    general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
+    if general is None:
+        return {"pct": 0, "missing": "Answer whether you want to self-report test scores."}
 
-    sat, act = snapshot["sat_test"], snapshot["act_test"]
-    has_sat_score = bool(sat["is_have_sat_scores_report"])
-    has_act_score = bool(act["is_have_act_score_report"])
-    has_future_date = bool(sat["future_testing_date_1"]) or bool(act["future_testing_date_1"])
+    checks = [
+        ("wish to self-report test scores question", _is_filled(general["is_wish_self_report_scores"])),
+        ("international leaving exam question", _is_filled(general["is_promotion_within_educational_system"])),
+    ]
 
-    if has_sat_score or has_act_score:
-        which = "SAT and ACT" if (has_sat_score and has_act_score) else ("SAT" if has_sat_score else "ACT")
-        return {"pct": 100, "missing": f"{which} score on file."}
-    if has_future_date:
-        return {"pct": 50, "missing": "Test date on record. Report your score once you have it."}
-    return {"pct": 0, "missing": "No test date on record. Add a sitting or mark test-optional."}
+    other_row = None  # shared by the advanced-level and TOEFL checks below
+    if general["is_promotion_within_educational_system"]:
+        other_row = _fetch_test_row(OTHER_TEST_SQL, student_id)
+        checks += [
+            ("advanced-level exam report question", other_row is not None and _is_filled(other_row["is_have_advanced_level_exam_wish_report"])),
+            ("predicted advanced-level exam report question", other_row is not None and _is_filled(other_row["is_have_predicted_advanced_level_exam_wish_report"])),
+        ]
+
+    if general["is_wish_self_report_scores"]:
+        wished = _decode_json_value(general["all_tests_wish_report_array"])
+        if not isinstance(wished, dict):
+            wished = {}
+
+        # Saying "yes" to self-reporting without checking any test box is an
+        # incomplete answer, not a valid "nothing to report" state -- it must
+        # count against the percentage rather than silently skip every check
+        # below and read as done.
+        checks.append(("at least one test type selected", any(wished.get(key) for key in ALL_TEST_TYPE_KEYS)))
+
+        if wished.get("is_SAT"):
+            sat = _fetch_test_row(SAT_TEST_READINESS_SQL, student_id)
+            has_score = sat is not None and bool(sat["is_have_sat_scores_report"])
+            has_future = sat is not None and bool(sat["future_testing_date_1"])
+            checks.append(("SAT score reported or a future test date on file", has_score or has_future))
+
+        if wished.get("is_ACT"):
+            act = _fetch_test_row(ACT_TEST_READINESS_SQL, student_id)
+            has_score = act is not None and bool(act["is_have_act_score_report"])
+            has_future = act is not None and bool(act["future_testing_date_1"])
+            checks.append(("ACT score reported or a future test date on file", has_score or has_future))
+            checks.append(("ACT Plus Writing question", act is not None and _is_filled(act["have_taken_act_plus_writing_test"])))
+
+        if wished.get("is_AP_Subject"):
+            ap = _fetch_test_row(AP_SUBJECT_TEST_SQL, student_id)
+            checks.append(("AP exam report question", ap is not None and _is_filled(ap["is_have_ap_exam_report"])))
+            if ap is not None and ap["is_have_ap_exam_report"]:
+                checks.append(("AP test count on file", bool(ap["number_of_ap_test_report"])))
+
+        if wished.get("is_IB_Subject"):
+            ib = _fetch_test_row(IB_SUBJECT_TEST_SQL, student_id)
+            checks.append(("IB exam report question", ib is not None and _is_filled(ib["is_have_ib_exam_report"])))
+            checks.append(("IB program completion question", ib is not None and _is_filled(ib["is_completed_full_ib"])))
+            if ib is not None and ib["is_have_ib_exam_report"]:
+                checks.append(("IB test count on file", bool(ib["number_of_ib_test_report"])))
+
+        if wished.get("is_CLEP"):
+            clep = _fetch_test_row(CLEP_TEST_SQL, student_id)
+            checks.append(("CLEP test information on file", clep is not None))
+
+        if wished.get("is_TOEFL"):
+            if other_row is None:
+                other_row = _fetch_test_row(OTHER_TEST_SQL, student_id)
+            checks.append(("TOEFL requirement question", other_row is not None and _is_filled(other_row["is_not_required_toefl_test"])))
+
+        ielts_pte_row = None
+        if wished.get("is_PTE") or wished.get("is_IELTS"):
+            ielts_pte_row = _fetch_test_row(IELTS_PTE_SQL, student_id)
+        if wished.get("is_PTE"):
+            checks.append(("PTE requirement question", ielts_pte_row is not None and _is_filled(ielts_pte_row["is_not_required_pte_test"])))
+        if wished.get("is_IELTS"):
+            checks.append(("IELTS requirement question", ielts_pte_row is not None and _is_filled(ielts_pte_row["is_not_required_ielts"])))
+
+        if wished.get("is_DuoLingo"):
+            duolingo = _fetch_test_row(DOULINGO_TEST_SQL, student_id)
+            checks.append(("DuoLingo test information on file", duolingo is not None))
+
+    missing = [label for label, complete in checks if not complete]
+    pct = round((len(checks) - len(missing)) / len(checks) * 100)
+
+    if not missing:
+        return {"pct": 100, "missing": "Complete!"}
+    return {"pct": pct, "missing": "Some things are missing from your tests."}
 
 
 # --- Courses & Grades readiness ---------------------------------------------
@@ -622,6 +743,129 @@ def _compute_courses_readiness(student_id):
     return {"pct": pct, "missing": "Some things are missing from your courses & grades.", "term_system": term_system}
 
 
+# --- Activities & Honors readiness -------------------------------------------
+# activity_honor is one row per student (student_id, not id -- same convention
+# as the STUDENT_SNAPSHOT_SQL fix above). Honors have no "do you have any
+# honors to report" gate the way activities do
+# (is_have_any_activity_to_report), so an empty honor_array is left alone --
+# reporting honors is purely opt-in, unlike activities.
+#
+# educational_program_participation.csu_info bundles CSU's program and
+# background questions into one JSON blob -- note its yes/no answers are the
+# strings "true"/"false" or "Yes"/"No", not real JSON booleans. Each base
+# program/background question is required, and its follow-up detail (e.g.
+# which year a program was attended) only becomes required once the base
+# question is answered "yes", the same conditional-requirement convention as
+# CAASPP_RELEASE_FIELDS above.
+
+ACTIVITY_HONOR_READINESS_SQL = """
+SELECT is_have_any_activity_to_report, activity_array
+FROM activity_honor
+WHERE student_id = %s
+"""
+
+EDUCATIONAL_PROGRAM_PARTICIPATION_SQL = "SELECT csu_info FROM educational_program_participation WHERE student_id = %s"
+
+EDUCATIONAL_PROGRAM_BASE_FIELDS = {
+    "avid": "AVID program question",
+    "upward_bound": "Upward Bound program question",
+    "talent_search": "Talent Search program question",
+    "puente_project": "Puente Project question",
+    "ilp": "Independent Living Program (ILP) question",
+    "MESA_project": "MESA Project question",
+    "other_program": "other program question",
+    "federal_outreach_program": "federal outreach program question",
+    "eap_eop_s_camp": "EAP/EOP summer camp question",
+    "umoja_project": "Umoja Project question",
+    "average_hours_worked_per_week": "average hours worked per week",
+    "is_more_25_percent_work_related_major": "work related to major question",
+    "average_hours_activities_per_week": "average hours on activities per week",
+    "is_leadership_positions": "leadership positions question",
+    "wish_to_apply_EOP": "EOP application interest question",
+    "where_plan_to_live": "planned living situation question",
+    "number_brothers_and_sisters_k12": "siblings in K-12 count",
+    "number_brothers_and_sisters_college": "siblings in college count",
+    "number_brothers_and_sisters_received_bachelor_degree": "siblings with a bachelor's degree count",
+    "languages_spoken_in_home": "languages spoken at home",
+    "is_received_income_from_public_assistance_program": "public assistance income question",
+    "is_participated_in_publicly_funded_programs": "publicly funded programs question",
+    "is_work_primarily_to_contribute": "work-to-contribute question",
+}
+
+# program flag -> its "what year did you participate" follow-up, only
+# required once the program itself is flagged "true"
+EDUCATIONAL_PROGRAM_YEAR_FIELDS = {
+    "avid": "year_participated_in_AVID",
+    "upward_bound": "year_participated_in_upward_bound",
+    "talent_search": "year_participated_in_talent_search",
+    "puente_project": "year_participated_in_puente_project",
+    "ilp": "year_participated_in_ilp",
+    "MESA_project": "year_participated_in_MESA_project",
+    "other_program": "year_participated_in_other_program",
+}
+
+
+def _csu_bool(value):
+    """csu_info blobs store yes/no answers as the strings "true"/"false" or
+    "Yes"/"No", not real JSON booleans."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes")
+    return bool(value)
+
+
+def _compute_activities_readiness(student_id):
+    activity_row = _fetch_test_row(ACTIVITY_HONOR_READINESS_SQL, student_id)
+    program_row = _fetch_test_row(EDUCATIONAL_PROGRAM_PARTICIPATION_SQL, student_id)
+    if activity_row is None and program_row is None:
+        return {"pct": 0, "missing": "No activities or honors on file yet."}
+
+    checks = []
+
+    if activity_row is not None:
+        checks.append(("activity report question", _is_filled(activity_row["is_have_any_activity_to_report"])))
+        if activity_row["is_have_any_activity_to_report"]:
+            checks.append(("activity list", _has_real_entries(activity_row["activity_array"], "programName")))
+
+    if program_row is not None:
+        csu_info = _decode_json_value(program_row["csu_info"])
+        if not isinstance(csu_info, dict):
+            csu_info = {}
+
+        for field, label in EDUCATIONAL_PROGRAM_BASE_FIELDS.items():
+            checks.append((label, _is_filled(csu_info.get(field))))
+
+        for flag, year_field in EDUCATIONAL_PROGRAM_YEAR_FIELDS.items():
+            if _csu_bool(csu_info.get(flag)):
+                checks.append((f"{flag} participation year", _is_filled(csu_info.get(year_field))))
+
+        if _csu_bool(csu_info.get("is_received_income_from_public_assistance_program")):
+            checks.append(("public assistance years received", _is_filled(csu_info.get("number_year_received_income"))))
+            checks.append(("public assistance aid type", _is_filled(csu_info.get("type_of_aid"))))
+
+        if _csu_bool(csu_info.get("is_participated_in_publicly_funded_programs")):
+            checks.append(("publicly funded programs detail", _is_filled(csu_info.get("publicly_funded_programs"))))
+
+        if _csu_bool(csu_info.get("is_work_primarily_to_contribute")):
+            checks.append(("work-to-contribute detail", _is_filled(csu_info.get("work_primarily_to_contribute"))))
+
+        if _csu_bool(csu_info.get("wish_to_apply_EOP")):
+            checks.append(("EOP enrollment question", _is_filled(csu_info.get("is_enrolled_EOP"))))
+            if _csu_bool(csu_info.get("is_enrolled_EOP")):
+                checks.append(("EOP campus", _is_filled(csu_info.get("campus_enrolled_EOP"))))
+
+    if not checks:
+        return {"pct": 0, "missing": "No activities or honors on file yet."}
+
+    missing = [label for label, complete in checks if not complete]
+    pct = round((len(checks) - len(missing)) / len(checks) * 100)
+
+    if not missing:
+        return {"pct": 100, "missing": "Complete!"}
+    return {"pct": pct, "missing": "Some things are missing from your activities & honors."}
+
+
 @app.get("/students/{student_id}/readiness")
 def get_readiness(student_id: str):
     return {
@@ -629,6 +873,7 @@ def get_readiness(student_id: str):
         "colleges": _compute_colleges_readiness(student_id),
         "tests": _compute_tests_readiness(student_id),
         "courses": _compute_courses_readiness(student_id),
+        "activities": _compute_activities_readiness(student_id),
     }
 
 
