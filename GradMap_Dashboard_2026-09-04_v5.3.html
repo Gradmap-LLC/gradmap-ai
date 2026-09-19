@@ -1503,6 +1503,7 @@ const STUDENT_ID = 13;
 const STUDENT = {
   termSystem: 'semester',              // full_year | semester | quarter | trimester -- real value arrives via loadClassYear()
   gradesLastUpdated: '2026-05-28',     // profile.courses_grades.last_updated
+  grade: null,                          // 1-12, or null while loading/unknown -- real value arrives via loadClassYear()
 };
 /* Class year, grade, season and term system are all computed server-side
    from personal_information.year_finish_high_school and
@@ -1522,6 +1523,7 @@ async function loadClassYear(){
   if (v) v.textContent = data.year_finish_high_school ? 'Class of ' + data.year_finish_high_school : 'Class year not on file';
   if (m) m.textContent = [data.grade_label, data.season].filter(Boolean).join(' · ');
   if (data.term_system && !termSystemFromCourses){ STUDENT.termSystem = data.term_system; checkStaleGrades(); }
+  if (typeof data.grade === 'number'){ STUDENT.grade = data.grade; if (bootDone) renderGrowth(); }
 }
 loadClassYear();
 
@@ -1579,13 +1581,13 @@ let bootDone = false;   /* the growth cards read TASKS, which is defined further
    real (mocked) value from the start -- nothing to flash. */
 const SECTIONS = [
   {key:'profile',    name:'Profile',              pct:null, missing:'Loading…',                                                    go:'Review',
-   review:'verified',  on:'Aug 30'},
+   review:'none', on:'', counselorVerified:false},
   {key:'courses',    name:'Courses & Grades',     pct:null, missing:'Loading…',                                                    go:'Add grades',
-   review:'submitted', on:'Aug 29'},
+   review:'none', on:'', counselorVerified:false},
   {key:'tests',      name:'Tests',                pct:null, missing:'Loading…',                                                    go:'Add a test',
-   review:'none',      on:''},
+   review:'none', on:'', counselorVerified:false},
   {key:'activities', name:'Activities & Honors',  pct:null, missing:'Loading…',                                                    go:'Add detail',
-   review:'changes',   on:'Aug 28'},
+   review:'none', on:'', counselorVerified:false},
   {key:'majors',     name:'Major Interests',      pct:85,  missing:'Two majors picked. Test them with an activity.',              go:'Open explorer',
    review:'none',      on:''},
   {key:'colleges',   name:'Colleges',             pct:null, missing:'Loading…',                                                    go:'Build list',
@@ -1603,11 +1605,15 @@ const REVIEW_COPY = {
 };
 
 function statusOf(p){
-  if (p === null) return ['none','Loading…'];
-  if (p >= 95) return ['done','Ready'];
-  if (p >= READY_AT) return ['done','Ready'];
-  if (p >= 40) return ['prog','In progress'];
   if (p > 0)   return ['thin','Just started'];
+  // "Ready" is reserved for actually-done (100%) -- READY_AT (80%) still
+  // counts toward the aggregate ring/count elsewhere, but on the card itself
+  // it reads as "Almost there", not a claim that nothing is left.
+  if (p === null)     return ['none','Loading…'];
+  if (p === 100)      return ['done','Ready'];
+  if (p >= READY_AT)  return ['done','Almost there'];
+  if (p >= 40)         return ['prog','In progress'];
+  if (p > 0)           return ['thin','Just started'];
   return ['none','Not started'];
 }
 
@@ -1644,7 +1650,7 @@ function renderRoad(){
   const circ = 2*Math.PI*17;
   document.getElementById('ringfg').setAttribute('stroke-dasharray', (circ*overall/100)+' '+circ);
   document.getElementById('ringtxt').textContent = overall+'%';
-  const verified = SECTIONS.filter(s=>s.review==='verified').length;
+  const verified = SECTIONS.filter(s=>s.counselorVerified).length;
   document.getElementById('road-head').textContent = 'Ready in '+ready+' of '+SECTIONS.length+' areas';
   document.getElementById('road-right').textContent = overall+'% ready';
   const cm = document.getElementById('cnsl-meter');
@@ -1662,19 +1668,15 @@ function renderRoad(){
     const [cls,label] = statusOf(s.pct);
     const pctText = s.pct === null ? '…' : s.pct+'%';
     const barWidth = s.pct === null ? 0 : s.pct;
-    const rv = REVIEW_COPY[s.review] ? REVIEW_COPY[s.review](s) : null;
-    const rvHTML = rv
-      ? (rv.act
-          ? `<button class="secrev ${rv.cls}" onclick="event.stopPropagation();sendForReview('${s.key}')">${rv.txt} →</button>`
-          : `<div class="secrev ${rv.cls}"><i></i>${rv.txt}</div>`)
-      : '';
+    // review badge (Verified/With counselor/Send to counselor/etc.) is
+    // hidden for now -- REVIEW_COPY/sendForReview/resolveRequest are left in
+    // place to bring back later, just not rendered onto the card.
     return `<div class="sec" onclick="${s.key==='majors'?"showScreen('majors')":`toast('Opens: ${s.name}')`}">
       <div class="n">${s.name}</div>
       <div class="st ${cls}">${label}</div>
       <div class="pbar"><i class="${cls==='prog'?'':cls}" style="width:${barWidth}%"></i></div>
       <div class="pct">${pctText}</div>
       <div class="miss">${s.missing}</div>
-      ${rvHTML}
       <div class="go">${s.go} →</div>
     </div>`;
   }).join('');
@@ -1689,9 +1691,17 @@ async function loadReadiness(){
   try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
   catch (e) { return; }
   const profileSection = SECTIONS.find(s=>s.key==='profile');
-  if (profileSection){ profileSection.pct = data.profile.pct; profileSection.missing = data.profile.missing; }
+  if (profileSection){
+    profileSection.pct = data.profile.pct;
+    profileSection.missing = data.profile.missing;
+    profileSection.counselorVerified = !!data.profile.counselor_verified;
+  }
   const testsSection = SECTIONS.find(s=>s.key==='tests');
-  if (testsSection){ testsSection.pct = data.tests.pct; testsSection.missing = data.tests.missing; }
+  if (testsSection){
+    testsSection.pct = data.tests.pct;
+    testsSection.missing = data.tests.missing;
+    testsSection.counselorVerified = !!data.tests.counselor_verified;
+  }
   const collegesSection = SECTIONS.find(s=>s.key==='colleges');
   if (collegesSection){ collegesSection.pct = data.colleges.pct; collegesSection.missing = data.colleges.missing; }
   const coursesSection = SECTIONS.find(s=>s.key==='courses');
@@ -1703,12 +1713,29 @@ async function loadReadiness(){
       termSystemFromCourses = true;
       checkStaleGrades();
     }
+    coursesSection.counselorVerified = !!data.courses.counselor_verified;
   }
   const activitiesSection = SECTIONS.find(s=>s.key==='activities');
-  if (activitiesSection){ activitiesSection.pct = data.activities.pct; activitiesSection.missing = data.activities.missing; }
+  if (activitiesSection){
+    activitiesSection.pct = data.activities.pct;
+    activitiesSection.missing = data.activities.missing;
+    activitiesSection.counselorVerified = !!data.activities.counselor_verified;
+  }
   renderRoad();
 }
 loadReadiness();
+
+/* Momentum's streak banner: consecutive weeks (page_status.updated_at) with
+   at least one page touched, computed server-side -- not a client guess. */
+let STREAK_WEEKS = null;
+async function loadStreak(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/streak`); }
+  catch (e) { return; }
+  STREAK_WEEKS = data.weeks;
+  if (bootDone) renderGrowth();
+}
+loadStreak();
 
 /* ---------- 3. Calendar ---------- */
 /* Google and Apple are both real, independent connections -- either, both,
@@ -3081,7 +3108,8 @@ async function saveEvent(){
    "junior" does. Part E of the hand-off spec carries the field names:
    level, streak_weeks, milestones[], unlocks[], pillars[].            */
 
-const STREAK_WEEKS = 3;   /* server-derived: weeks with at least one status change or add */
+/* STREAK_WEEKS is declared earlier, near loadStreak() -- it's fetched live
+   from /students/{id}/streak (page_status.updated_at), not a constant. */
 
 function overallPct(){
   const loaded = SECTIONS.filter(s=>s.pct !== null);
@@ -3118,19 +3146,19 @@ function renderMomentum(){
 
   const chip = document.getElementById('levelchip');
   if (chip) chip.textContent = '◆ '+lvl;
-  document.getElementById('mo-right').textContent = lvl+' · grade 11';
+  document.getElementById('mo-right').textContent = STUDENT.grade ? lvl+' · grade '+STUDENT.grade : lvl;
 
   /* Road to CAM already owns the readiness count and the ring, so this card
      says something it does not: how far the level is, and what is closest.  */
   document.getElementById('mo-left').innerHTML =
-      '<span class="lvl">◆ '+lvl+' · Grade 11</span>'
+      '<span class="lvl">◆ '+lvl+(STUDENT.grade ? ' · Grade '+STUDENT.grade : '')+'</span>'
     + '<span class="big">'+(behind.length
         ? behind.length+' section'+(behind.length===1?'':'s')+' from Applicant'
         : 'Everything CAM needs is on file')+'</span>'
     + '<div class="cap">'+(nearest
         ? 'Closest is <b>'+nearest.name.toLowerCase()+'</b>, '+nearest.pct+'% done. '+nearest.missing
         : 'Nothing outstanding. Application work carries on in CAM.')+'</div>'
-    + '<div class="streak">🔥 '+STREAK_WEEKS+' weeks of steady progress, keep it going</div>'
+    + (STREAK_WEEKS ? '<div class="streak">🔥 '+STREAK_WEEKS+' week'+(STREAK_WEEKS===1?'':'s')+' of steady progress, keep it going</div>' : '')
     + '<div class="mile">'+milestones().map(([got,txt])=>
         '<span class="mbadge'+(got?'':' next')+'">'+(got?'✓':'◇')+' '+txt+'</span>').join('')+'</div>';
 

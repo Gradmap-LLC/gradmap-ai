@@ -2,7 +2,7 @@ import argparse
 import html
 import json
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -479,6 +479,138 @@ def _compute_profile_readiness(student_id):
     return {"pct": pct, "missing": "Some things are missing from your profile!"}
 
 
+# --- "Verified by you" / send-to-counselor gate ------------------------------
+# page_status tracks one row per intake page, addressed by student_id +
+# page_name -- a row only exists once the student has actually opened that
+# page, so a page the student hasn't touched yet reads the same as one left
+# incomplete. This is independent of each section's field-by-field pct above
+# -- pct measures how much of the underlying data is filled in, this measures
+# whether the student (student_completed) or the counselor
+# (counselor_verified) has explicitly marked every required page for that
+# section done.
+
+PROFILE_PAGE_NAMES = (
+    "Basic Information",
+    "Contact Details",
+    "Demographics",
+    "Citizenship-Residency",
+    "CBOs & Fee Waiver",
+    "Other Information",
+)
+
+# Activities & Honors' page list isn't gated by any selection -- all four are
+# always part of that screen's own left-nav checklist.
+ACTIVITIES_PAGE_NAMES = (
+    "Activities",
+    "Honors & Awards",
+    "EOP and Other Info",
+    "Responsibilities and Circumstances",
+)
+
+# Tests' page list mirrors exactly the "Indicate all tests you wish to
+# report" checkboxes in all_tests_wish_report_array -- a test type the
+# student didn't check has no page to require.
+TEST_TYPE_PAGE_NAMES = {
+    "is_SAT": "SAT Tests",
+    "is_ACT": "ACT Tests",
+    "is_AP_Subject": "AP Subject Tests",
+    "is_IB_Subject": "IB Subject Tests",
+    "is_CLEP": "CLEP Tests",
+    "is_TOEFL": "TOEFL iBT",
+    "is_PTE": "PTE Academic",
+    "is_IELTS": "IELTS",
+    "is_DuoLingo": "DuoLingo",
+}
+
+
+def _fetch_page_status_rows(student_id, page_names):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT page_name, student_completed, student_completed_at, counselor_verified FROM page_status WHERE student_id = %(student_id)s AND page_name = ANY(%(page_names)s)",
+                {"student_id": student_id, "page_names": list(page_names)},
+            )
+            return cursor.fetchall()
+
+
+def _self_verification_status(student_id, required_pages):
+    if not required_pages:
+        return {"verified_by_student_at": None, "counselor_verified": False}
+
+    rows = _fetch_page_status_rows(student_id, required_pages)
+    by_page = {row["page_name"]: row for row in rows}
+
+    verified_by_student_at = None
+    if all(by_page.get(name, {}).get("student_completed") for name in required_pages):
+        completed_at = [by_page[name]["student_completed_at"] for name in required_pages]
+        timestamps = [ts for ts in completed_at if ts is not None]
+        if timestamps:
+            verified_by_student_at = max(timestamps).date().isoformat()
+
+    counselor_verified = all(by_page.get(name, {}).get("counselor_verified") for name in required_pages)
+
+    return {"verified_by_student_at": verified_by_student_at, "counselor_verified": counselor_verified}
+
+
+def _compute_profile_self_verification(student_id):
+    return _self_verification_status(student_id, PROFILE_PAGE_NAMES)
+
+
+def _compute_activities_self_verification(student_id):
+    return _self_verification_status(student_id, ACTIVITIES_PAGE_NAMES)
+
+
+def _compute_tests_self_verification(student_id):
+    general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
+    required_pages = ["Test General Info"]
+
+    if general is not None and general["is_wish_self_report_scores"]:
+        wished = _decode_json_value(general["all_tests_wish_report_array"])
+        if not isinstance(wished, dict):
+            wished = {}
+        for flag, page_name in TEST_TYPE_PAGE_NAMES.items():
+            if wished.get(flag):
+                required_pages.append(page_name)
+
+    return _self_verification_status(student_id, required_pages)
+
+
+def _compute_courses_self_verification(student_id):
+    grades_row = _fetch_grade_and_college_course_row(student_id)
+    current_grade = _current_grade_level(student_id)
+
+    required_pages = ["General Info"]
+    for level in (9, 10, 11, 12):
+        if current_grade is not None and current_grade < level:
+            continue
+        required_pages.append(f"{level}th Grade")
+
+    if grades_row is not None and _has_real_courses(grades_row["college_course_array"]):
+        required_pages.append("College Courses")
+
+    return _self_verification_status(student_id, required_pages)
+
+
+# A student's overall "streak" -- consecutive weeks (including the current
+# one) with at least one page_status row touched. Deliberately global across
+# every page, not per-section, since momentum is about the student as a
+# whole, not any one Road to CAM card.
+def _compute_streak_weeks(student_id):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT updated_at FROM page_status WHERE student_id = %s", (student_id,))
+            rows = cursor.fetchall()
+
+    active_weeks = {row["updated_at"].isocalendar()[:2] for row in rows if row["updated_at"]}
+
+    weeks = 0
+    cursor_date = date.today()
+    while cursor_date.isocalendar()[:2] in active_weeks:
+        weeks += 1
+        cursor_date -= timedelta(weeks=1)
+    return weeks
+
+
 def _compute_colleges_readiness(student_id):
     total = _fetch_college_list(student_id)["total"]
     pct = min(100, round(total / COLLEGE_LIST_TARGET_MIN * 100)) if total else 0
@@ -868,13 +1000,30 @@ def _compute_activities_readiness(student_id):
 
 @app.get("/students/{student_id}/readiness")
 def get_readiness(student_id: str):
+    profile = _compute_profile_readiness(student_id)
+    profile.update(_compute_profile_self_verification(student_id))
+
+    tests = _compute_tests_readiness(student_id)
+    tests.update(_compute_tests_self_verification(student_id))
+
+    courses = _compute_courses_readiness(student_id)
+    courses.update(_compute_courses_self_verification(student_id))
+
+    activities = _compute_activities_readiness(student_id)
+    activities.update(_compute_activities_self_verification(student_id))
+
     return {
-        "profile": _compute_profile_readiness(student_id),
+        "profile": profile,
         "colleges": _compute_colleges_readiness(student_id),
-        "tests": _compute_tests_readiness(student_id),
-        "courses": _compute_courses_readiness(student_id),
-        "activities": _compute_activities_readiness(student_id),
+        "tests": tests,
+        "courses": courses,
+        "activities": activities,
     }
+
+
+@app.get("/students/{student_id}/streak")
+def get_streak(student_id: str):
+    return {"weeks": _compute_streak_weeks(student_id)}
 
 
 # --- Class year / grade / season -------------------------------------------
