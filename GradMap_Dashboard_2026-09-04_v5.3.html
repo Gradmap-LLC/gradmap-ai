@@ -2086,6 +2086,12 @@ function taskHTML(t){
   const srcChip = src
     ? `<span class="srcchip" onclick="event.stopPropagation();toast('Opens: ${src.opens}')">${src.label} ↗</span>`
     : '';
+  // Carried over from the suggestion this task came from (see addSug /
+  // mapTaskFromRecommendation) -- a manually added task has no link, so this
+  // just doesn't render for those.
+  const linkChip = t.link
+    ? `<a class="chip" href="${escHtml(t.link)}" target="_blank" rel="noopener" style="text-decoration:none" onclick="event.stopPropagation()">More Info</a>`
+    : '';
   const reqLine = t.req
     ? `<div class="reqline">${PERSON_SVG}<b>${t.req.by} asked for this</b> on ${t.req.on}. ${
         t.st==='done' ? 'Sent back to '+t.req.by+' for review.'
@@ -2095,7 +2101,7 @@ function taskHTML(t){
     <div class="cb ${t.st==='done'?'on':''}" onclick="toggle(${t.id})"></div>
     <div class="tmain">
       <div class="ttitle">${escHtml(t.t)} ${flag}</div>
-      <div class="trow"><span class="chip">${escHtml(t.cat)}</span>${t.sub?`<span class="chip">${escHtml(t.sub)}</span>`:''}${srcChip}${hasEst(t)?`<span class="est">${escHtml(t.est)}</span>`:'<span class="est unsized">no estimate yet</span>'}</div>
+      <div class="trow"><span class="chip">${escHtml(t.cat)}</span>${t.sub?`<span class="chip">${escHtml(t.sub)}</span>`:''}${srcChip}${linkChip}${hasEst(t)?`<span class="est">${escHtml(t.est)}</span>`:'<span class="est unsized">no estimate yet</span>'}</div>
       ${reqLine}
       <div class="why">${escHtml(t.why)}</div>
       ${t.how?`<button class="howbtn" onclick="toggleHow(this)">How do I do this?</button>
@@ -2304,6 +2310,7 @@ function mapTaskFromRecommendation(r){
     id: r.id, t: r.title, cat: CATEGORY_LABELS[r.category] || 'General', why: r.subtext || '',
     hard: '', target: r.target_date ? isoToDisplay(r.target_date) : '',
     est: r.estimated_time || '', st: r.status, grade: '', yr: 'now', fromRecommendation: true,
+    link: r.link || null,
   };
 }
 
@@ -2369,7 +2376,7 @@ async function addSug(id){
   }
   sugBusyIds.delete(id);
   TASKS.push({id:s.id, t:s.title, cat:s.cat, why:s.why,
-              hard:'', target:'', est:s.est, st:'in_progress', grade:'', yr:'now', fromRecommendation:true});
+              hard:'', target:'', est:s.est, st:'in_progress', grade:'', yr:'now', fromRecommendation:true, link:s.link});
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); renderTasks(); toast('Added "'+s.title+'" to your plan');
 }
 /* Snooze is local-only -- there's no "snoozed" state in the backend, so this
@@ -2785,7 +2792,7 @@ async function suggestMore(){
 function sugCard(s){
   const estBit  = hasEst(s) ? `<span class="est">Est. ${escHtml(s.est)}</span>`
                             : `<span class="est">Time varies</span>`;
-  const destBit = s.link ? `<a class="chip" href="${escHtml(s.link)}" target="_blank" rel="noopener" style="text-decoration:none">Open link</a>` : '';
+  const destBit = s.link ? `<a class="chip" href="${escHtml(s.link)}" target="_blank" rel="noopener" style="text-decoration:none">More Info</a>` : '';
   const busy = sugBusyIds.has(s.id);
   return `<div class="sug">
     <div class="r1"><div class="st">${escHtml(s.title)}</div><span class="urg ${s.urg}">${
