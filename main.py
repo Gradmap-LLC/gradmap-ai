@@ -1136,6 +1136,87 @@ def _compute_activities_readiness(student_id):
     return {"pct": pct, "missing": "Some things are missing from your activities & honors."}
 
 
+# --- "Spike / distinction" pillar --------------------------------------------
+# A strength score, not a readiness percentage -- there's nothing to "finish"
+# here. Deliberately cheap: it reuses the same activity_honor row the
+# Activities & Honors readiness check already fetches (no extra query) and
+# just aggregates the JSON arrays already sitting in Python, so it stays fast
+# even computed fresh for hundreds of students on every dashboard load. Takes
+# the MAX of each signal across entries rather than summing, so one deep,
+# recognized thing scores higher than a resume padded with shallow one-offs
+# -- which is what "spike" is supposed to reward.
+
+SPIKE_RECOGNITION_POINTS = {
+    "isSchoolLevelRecognition": 10,
+    "isStateLevelRecognition": 25,
+    "isNational": 50,
+    "isInternationalLevelRecognition": 70,
+}
+
+SPIKE_TENURE_FIELDS = (
+    "isGrade9ParticipationLevels",
+    "isGrade10ParticipationLevels",
+    "isGrade11ParticipationLevels",
+    "isGrade12ParticipationLevels",
+)
+SPIKE_TENURE_MIN_GRADES = 3
+SPIKE_TENURE_POINTS = 10
+
+SPIKE_LEADERSHIP_POINTS = 15
+
+SPIKE_DEPTH_HIGH_HOURS_PER_YEAR = 300
+SPIKE_DEPTH_HIGH_POINTS = 15
+SPIKE_DEPTH_LOW_HOURS_PER_YEAR = 150
+SPIKE_DEPTH_LOW_POINTS = 8
+
+
+def _compute_spike_pct(student_id):
+    row = _fetch_test_row("SELECT activity_array, honor_array FROM activity_honor WHERE student_id = %s", student_id)
+    if row is None:
+        return 0
+
+    honors = _decode_json_value(row["honor_array"])
+    if not isinstance(honors, list):
+        honors = []
+
+    recognition_points = 0
+    for honor in honors:
+        if not isinstance(honor, dict):
+            continue
+        for field, points in SPIKE_RECOGNITION_POINTS.items():
+            if _csu_bool(honor.get(field)):
+                recognition_points = max(recognition_points, points)
+
+    activities = _decode_json_value(row["activity_array"])
+    if not isinstance(activities, list):
+        activities = []
+
+    leadership_points = 0
+    depth_points = 0
+    tenure_points = 0
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+
+        if _csu_bool(activity.get("isInvolvedLeadershipRole")):
+            leadership_points = SPIKE_LEADERSHIP_POINTS
+
+        try:
+            yearly_hours = float(activity.get("hoursPerWeek")) * float(activity.get("weeksPerYear"))
+        except (TypeError, ValueError):
+            yearly_hours = 0
+        if yearly_hours >= SPIKE_DEPTH_HIGH_HOURS_PER_YEAR:
+            depth_points = max(depth_points, SPIKE_DEPTH_HIGH_POINTS)
+        elif yearly_hours >= SPIKE_DEPTH_LOW_HOURS_PER_YEAR:
+            depth_points = max(depth_points, SPIKE_DEPTH_LOW_POINTS)
+
+        grades_spanned = sum(1 for field in SPIKE_TENURE_FIELDS if _csu_bool(activity.get(field)))
+        if grades_spanned >= SPIKE_TENURE_MIN_GRADES:
+            tenure_points = SPIKE_TENURE_POINTS
+
+    return min(100, recognition_points + leadership_points + depth_points + tenure_points)
+
+
 @app.get("/students/{student_id}/readiness")
 def get_readiness(student_id: str):
     profile = _compute_profile_readiness(student_id)
@@ -1157,6 +1238,7 @@ def get_readiness(student_id: str):
         "tests": tests,
         "courses": courses,
         "activities": activities,
+        "spike": {"pct": _compute_spike_pct(student_id)},
     }
 
 

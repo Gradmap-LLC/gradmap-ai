@@ -1719,6 +1719,7 @@ async function loadReadiness(){
     activitiesSection.missing = data.activities.missing;
     activitiesSection.counselorVerified = !!data.activities.counselor_verified;
   }
+  SPIKE_PCT = data.spike.pct;
   renderRoad();
 }
 loadReadiness();
@@ -3190,10 +3191,16 @@ function renderNudges(){
    Words, never a number. A parent never sees this as a score.       */
 const PILLARS = [
   {name:'Academics',           from:'courses'},
-  {name:'Spike / distinction', from:'majors'},
+  {name:'Spike / distinction', from:'spike'},
   {name:'Activities',          from:'activities'},
   {name:'Testing',             from:'tests'}
 ];
+/* Spike isn't a Road to CAM section (nothing to "finish"), so it isn't in
+   SECTIONS/sectionPct -- it's a strength score computed server-side from
+   activity_honor (recognition level, leadership, depth, tenure) and loaded
+   straight into this var by loadReadiness. */
+let SPIKE_PCT = 0;
+function pillarPct(from){ return from === 'spike' ? SPIKE_PCT : sectionPct(from); }
 /* Reuses the Road to CAM bar classes, so a pillar and its section are the
    same colour on the same screen. Words are the reading; the bar is decoration. */
 function strengthOf(p){
@@ -3297,7 +3304,7 @@ function renderOneline(){
 
 function renderStory(){
   document.getElementById('story').innerHTML = PILLARS.map(x=>{
-    const p = sectionPct(x.from), [word,cls] = strengthOf(p);
+    const p = pillarPct(x.from), [word,cls] = strengthOf(p);
     return '<div class="pil"><div class="pr"><b>'+x.name+'</b><span>'+word+'</span></div>'
          + '<div class="pbar"><i class="'+cls+'" style="width:'+p+'%"></i></div></div>';
   }).join('')
