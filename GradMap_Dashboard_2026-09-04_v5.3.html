@@ -1036,7 +1036,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
             </div>
             <div class="s">
               <div class="k">GPA</div>
-              <div class="v">4.21 <small>W</small> &nbsp; 3.88 <small>UW</small></div>
+              <div class="v">X.XX <small>W</small> &nbsp; X.XX <small>UW</small></div>
               <div class="m" id="gpa-updated">Last updated ·</div>
             </div>
             <div class="s">
@@ -1482,6 +1482,36 @@ async function apiFetch(path, opts){
   return res.status === 204 ? null : res.json();
 }
 
+/* ---------- Cache + live-refresh infra ----------
+   This page is a static file with no framework, so on its own a reload is a
+   cold start (nothing is cached) and nothing ever re-asks the server after
+   the first load (so a change made elsewhere, like the real GradMap portal,
+   never shows up without a manual refresh). Two small, separate fixes:
+   - cacheGet/cacheSet: each live section's last-known response is stashed in
+     localStorage and painted immediately on boot, before the network reply
+     lands, then overwritten once the real fetch resolves -- refresh feels
+     instant instead of starting from "Loading...".
+   - pollEvery: after the first load, keep re-running it on an interval so
+     the page catches up with server-side changes on its own. Only applied
+     to read-only display data -- the story line has its own in-progress-
+     edit textarea, so it's deliberately left out (see loadStory).         */
+function cacheGet(key){
+  try { const raw = localStorage.getItem('gm_cache_'+key); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function cacheSet(key, data){
+  try { localStorage.setItem('gm_cache_'+key, JSON.stringify(data)); }
+  catch (e) { /* storage full or blocked (private window, etc.) -- just skip caching */ }
+}
+const POLL_MS = 25000;
+function pollEvery(fn){ setInterval(fn, POLL_MS); }
+// The growth cards (renderGrowth, defined much further down) read TASKS/
+// STORY/etc. that aren't populated yet this early, so bootDone gates them
+// off until boot finishes -- declared here rather than nearer its own
+// section because a cache hit can call an apply*() that checks it before
+// the script reaches its old declaration point.
+let bootDone = false;
+
 /* ---------- 0. Date & time -------------------------------------------
    The app reads the student's LOCAL date directly. No need to tell it.
    Everything time-sensitive on this page (the stale-grades nudge, the
@@ -1513,47 +1543,62 @@ const STUDENT = {
    The latter is the more specific, live source for this feature, so once it
    arrives it wins and this fallback stops overwriting it. */
 let termSystemFromCourses = false;
-async function loadClassYear(){
+function applyClassYear(data){
   const v = document.getElementById('class-year-v'), m = document.getElementById('class-year-m');
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/class-year`); }
-  catch (e) { return; }
   if (v) v.textContent = data.year_finish_high_school ? 'Class of ' + data.year_finish_high_school : 'Class year not on file';
   if (m) m.textContent = [data.grade_label, data.season].filter(Boolean).join(' · ');
   if (data.term_system && !termSystemFromCourses){ STUDENT.termSystem = data.term_system; checkStaleGrades(); }
   if (typeof data.grade === 'number'){ STUDENT.grade = data.grade; if (bootDone) renderGrowth(); }
 }
+async function loadClassYear(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/class-year`); }
+  catch (e) { return; }
+  applyClassYear(data);
+  cacheSet('class-year', data);
+}
 loadClassYear();
+pollEvery(loadClassYear);
 
 /* Majors of interest chips: student.additional_info.majors_interest_1/_2,
    real per-student data (main.py's /majors-of-interest), not a guess. */
-async function loadMajorsOfInterest(){
+function applyMajorsOfInterest(data){
   const el = document.getElementById('majors-chips');
   if (!el) return;
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/majors-of-interest`); }
-  catch (e) { return; }
   el.innerHTML = data.majors.length
     ? data.majors.map(m=>'<span class="chip">'+escHtml(m)+'</span>').join('')
     : '<span class="m">None on file yet</span>';
 }
+async function loadMajorsOfInterest(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/majors-of-interest`); }
+  catch (e) { return; }
+  applyMajorsOfInterest(data);
+  cacheSet('majors-of-interest', data);
+}
 loadMajorsOfInterest();
+pollEvery(loadMajorsOfInterest);
 
 /* School list characteristics: a handful of chips (1-5) summarizing the
    active college list's public/private, size, setting and in-state mix --
    computed server-side from schools joined to the student's active picks,
    not one chip per school (main.py's /college-list/characteristics). */
-async function loadSchoolCharacteristics(){
+function applySchoolCharacteristics(data){
   const el = document.getElementById('school-char-chips');
   if (!el) return;
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/college-list/characteristics`); }
-  catch (e) { return; }
   el.innerHTML = data.characteristics.length
     ? data.characteristics.map(c=>'<span class="chip">'+escHtml(c)+'</span>').join('')
     : '<span class="m">Add schools to see your fit</span>';
 }
+async function loadSchoolCharacteristics(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/college-list/characteristics`); }
+  catch (e) { return; }
+  applySchoolCharacteristics(data);
+  cacheSet('school-characteristics', data);
+}
 loadSchoolCharacteristics();
+pollEvery(loadSchoolCharacteristics);
 
 /* Term anchors: when a student on this system would have new grades.
    month is 0-indexed. Backend can override per school calendar.        */
@@ -1600,7 +1645,6 @@ checkStaleGrades();
    submitted sent, sitting with the counselor
    verified  the counselor signed it off
    changes   the counselor sent it back, and a task exists in the plan for it   */
-let bootDone = false;   /* the growth cards read TASKS, which is defined further down */
 /* Every section here is backed by a live /readiness call (loadReadiness,
    below) -- they start at pct:null ("still loading") rather than a guessed
    number, so the card shows a neutral loading state instead of a real-looking
@@ -1710,10 +1754,11 @@ function renderRoad(){
 renderRoad();
 /* Every Road to CAM section is now backed by a real, already-queried
    backend (Family reads household/parent_no1/parent_no2/siblings). */
-async function loadReadiness(){
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
-  catch (e) { return; }
+// Declared here (not next to PILLARS/pillarPct further down) because
+// applyReadiness can run synchronously off a cached response before the
+// script has reached that point.
+let SPIKE_PCT = 0;
+function applyReadiness(data){
   const profileSection = SECTIONS.find(s=>s.key==='profile');
   if (profileSection){
     profileSection.pct = data.profile.pct;
@@ -1750,19 +1795,32 @@ async function loadReadiness(){
   SPIKE_PCT = data.spike.pct;
   renderRoad();
 }
+async function loadReadiness(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/readiness`); }
+  catch (e) { return; }
+  applyReadiness(data);
+  cacheSet('readiness', data);
+}
 loadReadiness();
+pollEvery(loadReadiness);
 
 /* Momentum's streak banner: consecutive weeks (page_status.updated_at) with
    at least one page touched, computed server-side -- not a client guess. */
 let STREAK_WEEKS = null;
+function applyStreak(data){
+  STREAK_WEEKS = data.weeks;
+  if (bootDone) renderGrowth();
+}
 async function loadStreak(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/streak`); }
   catch (e) { return; }
-  STREAK_WEEKS = data.weeks;
-  if (bootDone) renderGrowth();
+  applyStreak(data);
+  cacheSet('streak', data);
 }
 loadStreak();
+pollEvery(loadStreak);
 
 /* ---------- 3. Calendar ---------- */
 /* Google and Apple are both real, independent connections -- either, both,
@@ -2260,10 +2318,7 @@ let sugBusyIds = new Set();
 /* Suggestions are student_recommendations rows with status='not_started';
    any other status means the student already acted on it (see addSug) --
    those become My Plan tasks instead. One fetch drives both lists. */
-async function loadRecommendations(){
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations`); }
-  catch (e) { toast('Could not load your suggestions and tasks'); return; }
+function applyRecommendations(data){
   SUGS = data.recommendations.filter(r => r.status === 'not_started').map(mapRecommendation);
   TASKS = data.recommendations.filter(r => r.status !== 'not_started').map(mapTaskFromRecommendation);
   renderSugs(); renderSugPage(); renderNudges();
@@ -2271,6 +2326,16 @@ async function loadRecommendations(){
   // momentum's "N tasks finished" milestone reads TASKS -- refresh it once
   // real task data lands, in case it arrives after the first render.
   if (bootDone) renderGrowth();
+}
+// silent: true suppresses the failure toast for background polling, so a
+// dropped connection doesn't nag every 25s -- the explicit boot/action calls
+// still want to hear about it.
+async function loadRecommendations(silent){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/recommendations`); }
+  catch (e) { if (!silent) toast('Could not load your suggestions and tasks'); return; }
+  applyRecommendations(data);
+  cacheSet('recommendations', data);
 }
 
 /* The dashboard card and the Suggestions screen render the same sugCard.
@@ -2339,6 +2404,7 @@ async function dismissSug(id){
   SUGS = SUGS.filter(x=>x.id!==id); renderSugs(); renderSugPage(); renderNudges(); toast('Dismissed');
 }
 loadRecommendations();
+pollEvery(() => loadRecommendations(true));
 
 
 /* ---------- 7. Quick add ----------
@@ -2612,13 +2678,18 @@ function parseWhen(str){
   return new Date(yr, mo, +m[2]);
 }
 let OWN = [];   /* events the student adds themselves, not tasks -- see loadOwnEvents() */
+function applyOwnEvents(data){
+  OWN = data.events.map(e => ({id:e.id, t:e.title, d:new Date(e.event_date+'T00:00'), kind:e.kind}));
+  renderCalendar();
+}
 async function loadOwnEvents(){
   let data;
   try { data = await apiFetch(`/students/${STUDENT_ID}/own-events`); }
   catch (e) { return; }
-  OWN = data.events.map(e => ({id:e.id, t:e.title, d:new Date(e.event_date+'T00:00'), kind:e.kind}));
-  renderCalendar();
+  applyOwnEvents(data);
+  cacheSet('own-events', data);
 }
+pollEvery(loadOwnEvents);
 function calEvents(){
   const ev={};
   OWN.forEach(o=>{
@@ -3226,8 +3297,10 @@ const PILLARS = [
 /* Spike isn't a Road to CAM section (nothing to "finish"), so it isn't in
    SECTIONS/sectionPct -- it's a strength score computed server-side from
    activity_honor (recognition level, leadership, depth, tenure) and loaded
-   straight into this var by loadReadiness. */
-let SPIKE_PCT = 0;
+   straight into this var by loadReadiness/applyReadiness (SPIKE_PCT itself
+   is declared much earlier, next to applyReadiness -- applyReadiness can run
+   synchronously off a localStorage cache hit before this point in the script
+   is ever reached, so the declaration can't live down here). */
 function pillarPct(from){ return from === 'spike' ? SPIKE_PCT : sectionPct(from); }
 /* Reuses the Road to CAM bar classes, so a pillar and its section are the
    same colour on the same screen. Words are the reading; the bar is decoration. */
@@ -3258,9 +3331,12 @@ function applyStoryResponse(s){
   };
 }
 async function loadStory(){
-  try { applyStoryResponse(await apiFetch(`/students/${STUDENT_ID}/story`)); }
-  catch (e) { /* leave STORY at its empty default if the load fails */ }
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/story`); }
+  catch (e) { renderOneline(); renderStory(); return; /* leave STORY at its empty default */ }
+  applyStoryResponse(data);
   renderOneline(); renderStory();
+  cacheSet('story', data);
 }
 function rebuildLabel(){
   return 'Rebuild from my profile ('+STORY.rebuildsRemaining+' left today)';
@@ -3383,6 +3459,30 @@ function addFromSkill(name){
 }
 
 function renderGrowth(){ renderMomentum(); renderNudges(); renderOneline(); renderStory(); }
+
+/* Every cached apply*() call is deliberately collected here, at the very end
+   of the script, rather than next to each function -- by this point every
+   const/let/function at the top level is guaranteed initialized, so applying
+   a localStorage hit synchronously can't hit a "cannot access before
+   initialization" error the way it could partway through the script. This
+   still paints before any network reply lands; moving it here costs nothing,
+   it all still runs in the same synchronous pass before the first frame. */
+[
+  ['class-year', applyClassYear],
+  ['majors-of-interest', applyMajorsOfInterest],
+  ['school-characteristics', applySchoolCharacteristics],
+  ['readiness', applyReadiness],
+  ['streak', applyStreak],
+  ['recommendations', applyRecommendations],
+  ['own-events', applyOwnEvents],
+].forEach(([key, apply]) => {
+  const cached = cacheGet(key);
+  if (cached) apply(cached);
+});
+// story is the one exception -- cached only, never polled (see loadStory).
+const cachedStory = cacheGet('story');
+if (cachedStory) applyStoryResponse(cachedStory);
+
 bootDone = true;
 renderGrowth();
 loadStory();
