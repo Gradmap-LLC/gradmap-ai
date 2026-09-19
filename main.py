@@ -3,6 +3,7 @@ import html
 import json
 import os
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import urlencode
@@ -84,9 +85,27 @@ DB_CONFIG = {
 # of the process; every _fetch_*/_compute_* helper should borrow from these
 # instead of calling psycopg.connect() directly.
 DB_POOLS = {
-    name: ConnectionPool(kwargs={**config, "row_factory": dict_row}, min_size=1, max_size=5, open=True)
+    # Sized for a single /readiness request's own internal concurrency (6
+    # sections in parallel, several of which fan out into 2-4 of their own
+    # concurrent queries) -- a single request can peak near a dozen
+    # simultaneous "student" connections.
+    name: ConnectionPool(kwargs={**config, "row_factory": dict_row}, min_size=2, max_size=15, open=True)
     for name, config in DB_CONFIG.items()
 }
+
+
+def _run_concurrently(*fns):
+    """Run independent, blocking (I/O-bound) callables in parallel threads and
+    return their results in the same order. Every query against this DB costs
+    roughly the same 200-800ms regardless of complexity -- that's network
+    round-trip time to a remote host, not query cost -- so the only way to
+    beat it is to stop paying it serially. psycopg releases the GIL while
+    waiting on the socket, so real threads genuinely overlap that wait."""
+    if not fns:
+        return []
+    with ThreadPoolExecutor(max_workers=len(fns)) as pool:
+        futures = [pool.submit(fn) for fn in fns]
+        return [f.result() for f in futures]
 
 
 # act_test/sat_test/high_school/activity_honor each have their own
@@ -772,10 +791,12 @@ def _fetch_family_row(sql, student_id):
 
 
 def _compute_family_readiness(student_id):
-    household = _fetch_family_row(HOUSEHOLD_SQL, student_id)
-    parent1 = _fetch_family_row(PARENT_FIELDS_SQL.format(n=1), student_id)
-    parent2 = _fetch_family_row(PARENT_FIELDS_SQL.format(n=2), student_id)
-    siblings = _fetch_family_row(SIBLINGS_SQL, student_id)
+    household, parent1, parent2, siblings = _run_concurrently(
+        lambda: _fetch_family_row(HOUSEHOLD_SQL, student_id),
+        lambda: _fetch_family_row(PARENT_FIELDS_SQL.format(n=1), student_id),
+        lambda: _fetch_family_row(PARENT_FIELDS_SQL.format(n=2), student_id),
+        lambda: _fetch_family_row(SIBLINGS_SQL, student_id),
+    )
 
     if household is None and parent1 is None and parent2 is None and siblings is None:
         return {"pct": 0, "missing": "No family information on file yet."}
@@ -810,8 +831,11 @@ def _compute_family_readiness(student_id):
             checks.append((label, _is_filled(csu_info.get(field))))
 
         if listing_step_parents:
-            for n in (1, 2):
-                step = _fetch_family_row(STEP_PARENT_FIELDS_SQL.format(n=n), student_id)
+            step1, step2 = _run_concurrently(
+                lambda: _fetch_family_row(STEP_PARENT_FIELDS_SQL.format(n=1), student_id),
+                lambda: _fetch_family_row(STEP_PARENT_FIELDS_SQL.format(n=2), student_id),
+            )
+            for n, step in ((1, step1), (2, step2)):
                 checks.append((f"step-parent {n} name", step is not None and _is_filled(step["first_name"]) and _is_filled(step["last_name"])))
                 checks.append((f"step-parent {n} relationship", step is not None and _is_filled(step["step_parent_relationship"])))
 
@@ -1311,37 +1335,81 @@ def _compute_spike_pct(row):
     return min(100, recognition_points + leadership_points + depth_points + tenure_points)
 
 
-@app.get("/students/{student_id}/readiness")
-def get_readiness(student_id: str):
-    profile = _compute_profile_readiness(student_id)
-    profile.update(_compute_profile_self_verification(student_id))
+def _build_profile_section(student_id):
+    # pct and self-verification hit different tables (personal_information+
+    # friends vs. page_status) -- nothing to serialize here.
+    pct_result, verification_result = _run_concurrently(
+        lambda: _compute_profile_readiness(student_id),
+        lambda: _compute_profile_self_verification(student_id),
+    )
+    pct_result.update(verification_result)
+    return pct_result
 
-    # Each of these rows is needed by both a section's pct and its
-    # self-verification (and activity_honor by Spike too) -- fetched once
-    # here and passed through, instead of every function re-querying the same
-    # row, which is what made /readiness slow on a remote DB.
+
+def _build_tests_section(student_id):
+    # Which SAT/ACT/etc. tables even need querying depends on
+    # all_tests_wish_report_array on this row, so it has to come first --
+    # but once we have it, pct and self-verification don't depend on each
+    # other and can run side by side.
     test_general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
-    tests = _compute_tests_readiness(student_id, test_general)
-    tests.update(_compute_tests_self_verification(student_id, test_general))
+    pct_result, verification_result = _run_concurrently(
+        lambda: _compute_tests_readiness(student_id, test_general),
+        lambda: _compute_tests_self_verification(student_id, test_general),
+    )
+    pct_result.update(verification_result)
+    return pct_result
 
-    course_general = _fetch_course_general_info_row(student_id)
-    grades_row = _fetch_grade_and_college_course_row(student_id)
-    current_grade = _current_grade_level(student_id)
+
+def _build_courses_section(student_id):
+    # course_general_info, grade_and_college_course and the class-year lookup
+    # are three unrelated queries -- fetch them side by side, then both
+    # compute functions run on data that's already in hand (no more queries).
+    course_general, grades_row, current_grade = _run_concurrently(
+        lambda: _fetch_course_general_info_row(student_id),
+        lambda: _fetch_grade_and_college_course_row(student_id),
+        lambda: _current_grade_level(student_id),
+    )
     courses = _compute_courses_readiness(course_general, grades_row, current_grade)
     courses.update(_compute_courses_self_verification(student_id, grades_row, current_grade))
+    return courses
 
+
+def _build_activities_section(student_id):
     activity_row = _fetch_test_row(ACTIVITY_HONOR_READINESS_SQL, student_id)
-    activities = _compute_activities_readiness(student_id, activity_row)
-    activities.update(_compute_activities_self_verification(student_id))
+    # _compute_activities_readiness makes its own educational_program_participation
+    # query internally, so it and self-verification's page_status query are
+    # still two round trips -- but independent of each other, so run together.
+    pct_result, verification_result = _run_concurrently(
+        lambda: _compute_activities_readiness(student_id, activity_row),
+        lambda: _compute_activities_self_verification(student_id),
+    )
+    pct_result.update(verification_result)
+    return pct_result, _compute_spike_pct(activity_row)
+
+
+@app.get("/students/{student_id}/readiness")
+def get_readiness(student_id: str):
+    # The 6 sections below don't touch each other's data at all, and every
+    # query here pays the same ~200-800ms remote round trip regardless of
+    # what it asks for -- so the win isn't a cheaper query, it's not waiting
+    # for one section to finish before starting the next.
+    profile, tests, courses, (activities, spike_pct), family, colleges = _run_concurrently(
+        lambda: _build_profile_section(student_id),
+        lambda: _build_tests_section(student_id),
+        lambda: _build_courses_section(student_id),
+        lambda: _build_activities_section(student_id),
+        lambda: _compute_family_readiness(student_id),
+        lambda: _compute_colleges_readiness(student_id),
+    )
 
     return {
         "profile": profile,
-        "family": _compute_family_readiness(student_id),
-        "colleges": _compute_colleges_readiness(student_id),
+        "family": family,
+        "colleges": colleges,
         "tests": tests,
         "courses": courses,
         "activities": activities,
-        "spike": {"pct": _compute_spike_pct(activity_row)},
+        "spike": {"pct": spike_pct},
     }
 
 
