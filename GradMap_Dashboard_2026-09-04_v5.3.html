@@ -1560,7 +1560,10 @@ checkStaleGrades();
 
 /* ---------- 2. Road to CAM ----------
    Deterministic. Computed from profile completeness, NOT from AI.      */
-const COUNSELOR = {name:'Ms. Reyes', school:'Lincoln High School'};
+/* No counselor identity is wired up yet (no assignment/roster endpoint for
+   it -- counselor_assignments in gm_schools tracks per-college likelihood
+   categorization, not a student's assigned review counselor), so the review
+   loop below refers to "your counselor" generically rather than a name. */
 
 /* review is the counselor loop, mirrored from the counselor Review Student screen.
    none      the student has not sent it yet
@@ -1592,11 +1595,11 @@ const READY_AT = 80;   // a section counts as "ready for CAM" at 80%
 
 const REVIEW_COPY = {
   none:      s => s.pct >= READY_AT
-                ? {cls:'rev-send',  txt:'Send to '+COUNSELOR.name, act:true}
+                ? {cls:'rev-send',  txt:'Send to your counselor', act:true}
                 : {cls:'rev-idle',  txt:'Finish this to send it for review'},
-  submitted: s => ({cls:'rev-sub',  txt:'With '+COUNSELOR.name+' since '+s.on}),
+  submitted: s => ({cls:'rev-sub',  txt:'With your counselor since '+s.on}),
   verified:  s => ({cls:'rev-ver',  txt:'Verified '+s.on}),
-  changes:   s => ({cls:'rev-chg',  txt:COUNSELOR.name+' asked for a change'})
+  changes:   s => ({cls:'rev-chg',  txt:'Your counselor asked for a change'})
 };
 
 function statusOf(p){
@@ -1617,7 +1620,7 @@ function sendForReview(key){
   s.review = 'submitted';
   s.on = NOW.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   renderRoad();
-  toast('Sent to ' + COUNSELOR.name + ' for review');
+  toast('Sent to your counselor for review');
 }
 
 /* A counselor request is a task like any other, with one difference: it was not
@@ -1627,7 +1630,7 @@ function resolveRequest(t){
   if (!t.req) return;
   const s = SECTIONS.find(x=>x.key===t.req.section);
   if (s){ s.review='submitted'; s.on = NOW.toLocaleDateString('en-US',{month:'short',day:'numeric'}); renderRoad(); }
-  toast('Sent back to ' + COUNSELOR.name);
+  toast('Sent back to your counselor');
 }
 
 function renderRoad(){
@@ -1646,7 +1649,7 @@ function renderRoad(){
   document.getElementById('road-right').textContent = overall+'% ready';
   const cm = document.getElementById('cnsl-meter');
   if (cm) cm.innerHTML =
-    '<span class="cm-l">Verified by '+COUNSELOR.name+'</span>'
+    '<span class="cm-l">Verified by your counselor</span>'
   + '<span class="cm-bar"><i style="width:'+Math.round(verified/SECTIONS.length*100)+'%"></i></span>'
   + '<span class="cm-n">'+verified+' of '+SECTIONS.length+'</span>';
 
