@@ -619,7 +619,6 @@ select.status{border:1px solid var(--hair);border-radius:var(--r-ctl);font-weigh
 .sug .st{font-size:15px;font-weight:600;letter-spacing:-.015em}
 .sug .w{background:var(--tint);border:0;border-left:3px solid var(--accent-mid);border-radius:var(--r-chip);padding:10px 13px}
 .urg{border-radius:var(--r-pill);font-weight:600;padding:4px 10px;font-size:11px;letter-spacing:0}
-.sugcat{font-size:11px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--gm-ink-muted)}
 
 /* filter bar */
 .fbar{border:0;box-shadow:var(--shadow);border-radius:16px;padding:11px 13px}
@@ -838,8 +837,6 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
 .grade{color:var(--muted);font-size:11.5px;white-space:nowrap}
 
 /* ---------- suggestions ---------- */
-.sugcat{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:14px 2px 8px}
-.sugcat:first-child{margin-top:0}
 .sug{border:1px solid var(--line);border-radius:var(--r-ctl);padding:12px 14px;margin-bottom:8px}
 .sug .r1{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .sug .st{font-weight:700;font-size:14px}
@@ -2349,10 +2346,9 @@ function renderSugs(){
   document.getElementById('sug-right').textContent = SUGS.length+' new ';
   const chips = '<div class="sugfilter">' + Object.keys(L).map(k =>
     `<button class="fchip2 ${dsugf===k?'on':''}" onclick="dsugFilter('${k}')">${L[k]}</button>`).join('') + '</div>';
-  const cats = [...new Set(shown.map(s=>s.cat))];
+  // One continuous grid, not one per category -- see renderSugPage for why.
   const body = shown.length
-    ? cats.map(c => `<div class="sugcat">${escHtml(c)}</div><div class="suggrid">`
-        + shown.filter(s=>s.cat===c).map(sugCard).join('') + '</div>').join('')
+    ? `<div class="suggrid">` + shown.map(sugCard).join('') + '</div>'
     : `<div style="color:var(--muted);text-align:center;padding:20px">Nothing in that filter right now.</div>`;
   document.getElementById('sugbody').innerHTML = chips + body;
 }
@@ -2806,9 +2802,13 @@ function renderSugPage(){
   const el=document.getElementById('sug-page'); if(!el) return;
   const q=(document.getElementById('sug-q').value||'').toLowerCase();
   const shown=SUGS.filter(s=>(sugf==='all'||s.urg===sugf)&&(!q||s.title.toLowerCase().includes(q)||s.why.toLowerCase().includes(q)));
-  const cats=[...new Set(shown.map(s=>s.cat))];
+  // One continuous grid, not one per category -- a category-per-grid split
+  // left a gap wherever a category had an odd count (a lone card sat alone
+  // in its own row), even with plenty of cards elsewhere to fill it. The
+  // category is still shown, just as the chip sugCard already puts on every
+  // card, so nothing is lost by not re-grouping under a heading too.
   el.innerHTML = shown.length
-    ? cats.map(c=>`<div class="sugcat">${c}</div><div class="suggrid">`+shown.filter(s=>s.cat===c).map(sugCard).join('')+`</div>`).join('')
+    ? `<div class="suggrid">`+shown.map(sugCard).join('')+`</div>`
     : `<div style="color:var(--muted);text-align:center;padding:28px">No suggestions match. Try clearing the filters or asking for one above.</div>`;
   document.getElementById('sug-cnt').textContent=`${shown.length} suggestion${shown.length===1?'':'s'}${shown.length!==SUGS.length?` (of ${SUGS.length})`:''}`;
 }
