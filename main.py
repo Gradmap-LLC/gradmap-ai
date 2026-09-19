@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import urlencode
 
-import psycopg
 from dotenv import load_dotenv
+from psycopg_pool import ConnectionPool
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -75,6 +75,17 @@ DB_CONFIG = {
     "dbname": os.environ["GM_DB_SCHOOLS_NAME"],
     }
 
+}
+
+# The DB host is remote, and opening a fresh connection to it costs ~600ms
+# (confirmed by measurement) -- with a couple dozen small queries spread
+# across a single /readiness call, connecting fresh every time turned that
+# into 15+ seconds. Pools are opened once at import and reused for the life
+# of the process; every _fetch_*/_compute_* helper should borrow from these
+# instead of calling psycopg.connect() directly.
+DB_POOLS = {
+    name: ConnectionPool(kwargs={**config, "row_factory": dict_row}, min_size=1, max_size=5, open=True)
+    for name, config in DB_CONFIG.items()
 }
 
 
@@ -220,7 +231,7 @@ def _row_to_snapshot(row):
 
 
 def _fetch_student_school_picks(student_id):
-    with psycopg.connect(**DB_CONFIG["gm_schools"], row_factory=dict_row) as connection:
+    with DB_POOLS["gm_schools"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(STUDENT_SCHOOL_PICKS_SQL, (student_id,))
             rows = cursor.fetchall()
@@ -287,7 +298,7 @@ def _school_pick_to_college(row):
 
 
 def _fetch_college_list(student_id):
-    with psycopg.connect(**DB_CONFIG["gm_schools"], row_factory=dict_row) as connection:
+    with DB_POOLS["gm_schools"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(STUDENT_COLLEGE_LIST_SQL, (student_id,))
             rows = cursor.fetchall()
@@ -302,7 +313,7 @@ def _fetch_college_list(student_id):
 
 
 def _fetch_student_snapshot(student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(STUDENT_SNAPSHOT_SQL, (student_id,))
             row = cursor.fetchone()
@@ -361,7 +372,7 @@ MAX_SCHOOL_CHARACTERISTICS = 5
 
 
 def _fetch_school_characteristic_rows(student_id):
-    with psycopg.connect(**DB_CONFIG["gm_schools"], row_factory=dict_row) as connection:
+    with DB_POOLS["gm_schools"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(SCHOOL_CHARACTERISTICS_SQL, (student_id,))
             return cursor.fetchall()
@@ -370,7 +381,7 @@ def _fetch_school_characteristic_rows(student_id):
 def _fetch_student_home_state(student_id):
     # schools.state is a 2-letter code ("CA") -- personal_information.state is
     # the full name ("California"), so state_code is the one that lines up.
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT state_code FROM personal_information WHERE id = %s", (student_id,))
             row = cursor.fetchone()
@@ -504,7 +515,7 @@ def _is_filled(value):
 
 
 def _fetch_profile_readiness_row(student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(PROFILE_READINESS_SQL, (student_id,))
             return cursor.fetchone()
@@ -617,7 +628,7 @@ TEST_TYPE_PAGE_NAMES = {
 
 
 def _fetch_page_status_rows(student_id, page_names):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT page_name, student_completed, student_completed_at, counselor_verified FROM page_status WHERE student_id = %(student_id)s AND page_name = ANY(%(page_names)s)",
@@ -653,8 +664,7 @@ def _compute_activities_self_verification(student_id):
     return _self_verification_status(student_id, ACTIVITIES_PAGE_NAMES)
 
 
-def _compute_tests_self_verification(student_id):
-    general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
+def _compute_tests_self_verification(student_id, general):
     required_pages = ["Test General Info"]
 
     if general is not None and general["is_wish_self_report_scores"]:
@@ -668,10 +678,7 @@ def _compute_tests_self_verification(student_id):
     return _self_verification_status(student_id, required_pages)
 
 
-def _compute_courses_self_verification(student_id):
-    grades_row = _fetch_grade_and_college_course_row(student_id)
-    current_grade = _current_grade_level(student_id)
-
+def _compute_courses_self_verification(student_id, grades_row, current_grade):
     required_pages = ["General Info"]
     for level in (9, 10, 11, 12):
         if current_grade is not None and current_grade < level:
@@ -689,7 +696,7 @@ def _compute_courses_self_verification(student_id):
 # every page, not per-section, since momentum is about the student as a
 # whole, not any one Road to CAM card.
 def _compute_streak_weeks(student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT updated_at FROM page_status WHERE student_id = %s", (student_id,))
             rows = cursor.fetchall()
@@ -758,7 +765,7 @@ def _is_meaningfully_filled(value):
 
 
 def _fetch_family_row(sql, student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(sql, (student_id,))
             return cursor.fetchone()
@@ -885,14 +892,13 @@ WHERE student_id = %s
 
 
 def _fetch_test_row(sql, student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(sql, (student_id,))
             return cursor.fetchone()
 
 
-def _compute_tests_readiness(student_id):
-    general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
+def _compute_tests_readiness(student_id, general):
     if general is None:
         return {"pct": 0, "missing": "Answer whether you want to self-report test scores."}
 
@@ -1014,14 +1020,14 @@ WHERE student_id = %s
 
 
 def _fetch_course_general_info_row(student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(COURSE_GENERAL_INFO_SQL, (student_id,))
             return cursor.fetchone()
 
 
 def _fetch_grade_and_college_course_row(student_id):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(GRADE_AND_COLLEGE_COURSE_SQL, (student_id,))
             return cursor.fetchone()
@@ -1052,9 +1058,7 @@ def _current_grade_level(student_id):
     return grade if isinstance(grade, int) else None
 
 
-def _compute_courses_readiness(student_id):
-    general = _fetch_course_general_info_row(student_id)
-    grades_row = _fetch_grade_and_college_course_row(student_id)
+def _compute_courses_readiness(general, grades_row, current_grade):
     if general is None and grades_row is None:
         return {"pct": 0, "missing": "No course information on file yet.", "term_system": None}
 
@@ -1085,7 +1089,6 @@ def _compute_courses_readiness(student_id):
 
         # Only grades the student has actually reached count against them --
         # a 10th grader isn't missing 11th/12th grade courses yet.
-        current_grade = _current_grade_level(student_id)
         for level in (9, 10, 11, 12):
             if current_grade is not None and current_grade < level:
                 continue
@@ -1122,7 +1125,7 @@ def _compute_courses_readiness(student_id):
 # CAASPP_RELEASE_FIELDS above.
 
 ACTIVITY_HONOR_READINESS_SQL = """
-SELECT is_have_any_activity_to_report, activity_array
+SELECT is_have_any_activity_to_report, activity_array, honor_array
 FROM activity_honor
 WHERE student_id = %s
 """
@@ -1178,8 +1181,7 @@ def _csu_bool(value):
     return bool(value)
 
 
-def _compute_activities_readiness(student_id):
-    activity_row = _fetch_test_row(ACTIVITY_HONOR_READINESS_SQL, student_id)
+def _compute_activities_readiness(student_id, activity_row):
     program_row = _fetch_test_row(EDUCATIONAL_PROGRAM_PARTICIPATION_SQL, student_id)
     if activity_row is None and program_row is None:
         return {"pct": 0, "missing": "No activities or honors on file yet."}
@@ -1263,8 +1265,7 @@ SPIKE_DEPTH_LOW_HOURS_PER_YEAR = 150
 SPIKE_DEPTH_LOW_POINTS = 8
 
 
-def _compute_spike_pct(student_id):
-    row = _fetch_test_row("SELECT activity_array, honor_array FROM activity_honor WHERE student_id = %s", student_id)
+def _compute_spike_pct(row):
     if row is None:
         return 0
 
@@ -1315,13 +1316,22 @@ def get_readiness(student_id: str):
     profile = _compute_profile_readiness(student_id)
     profile.update(_compute_profile_self_verification(student_id))
 
-    tests = _compute_tests_readiness(student_id)
-    tests.update(_compute_tests_self_verification(student_id))
+    # Each of these rows is needed by both a section's pct and its
+    # self-verification (and activity_honor by Spike too) -- fetched once
+    # here and passed through, instead of every function re-querying the same
+    # row, which is what made /readiness slow on a remote DB.
+    test_general = _fetch_test_row(TEST_GENERAL_INFO_SQL, student_id)
+    tests = _compute_tests_readiness(student_id, test_general)
+    tests.update(_compute_tests_self_verification(student_id, test_general))
 
-    courses = _compute_courses_readiness(student_id)
-    courses.update(_compute_courses_self_verification(student_id))
+    course_general = _fetch_course_general_info_row(student_id)
+    grades_row = _fetch_grade_and_college_course_row(student_id)
+    current_grade = _current_grade_level(student_id)
+    courses = _compute_courses_readiness(course_general, grades_row, current_grade)
+    courses.update(_compute_courses_self_verification(student_id, grades_row, current_grade))
 
-    activities = _compute_activities_readiness(student_id)
+    activity_row = _fetch_test_row(ACTIVITY_HONOR_READINESS_SQL, student_id)
+    activities = _compute_activities_readiness(student_id, activity_row)
     activities.update(_compute_activities_self_verification(student_id))
 
     return {
@@ -1331,7 +1341,7 @@ def get_readiness(student_id: str):
         "tests": tests,
         "courses": courses,
         "activities": activities,
-        "spike": {"pct": _compute_spike_pct(student_id)},
+        "spike": {"pct": _compute_spike_pct(activity_row)},
     }
 
 
@@ -1396,7 +1406,7 @@ def get_class_year(student_id: str):
 # student_id column to join on.
 @app.get("/students/{student_id}/majors-of-interest")
 def get_majors_of_interest(student_id: str):
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT additional_info FROM student WHERE id = %s", (student_id,))
             row = cursor.fetchone()
@@ -1479,7 +1489,7 @@ def _honor_request_to_record(honor: AddHonorRequest) -> dict:
 
 
 def _append_honor(student_id: str, honor: AddHonorRequest) -> tuple[dict, int]:
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(SELECT_HONOR_ARRAY_SQL, (student_id,))
             row = cursor.fetchone()
@@ -1613,7 +1623,7 @@ def _activity_request_to_record(activity: AddActivityRequest) -> dict:
 
 
 def _append_activity(student_id: str, activity: AddActivityRequest) -> tuple[dict, int]:
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(SELECT_ACTIVITY_ARRAY_SQL, (student_id,))
             row = cursor.fetchone()
@@ -1693,7 +1703,7 @@ class AddSatScoreRequest(BaseModel):
 
 
 def _append_sat_score(student_id: str, body: AddSatScoreRequest) -> dict:
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(SELECT_SAT_ROW_SQL, (student_id,))
             row = cursor.fetchone()
@@ -1830,7 +1840,7 @@ class AddActScoreRequest(BaseModel):
 
 
 def _append_act_score(student_id: str, body: AddActScoreRequest) -> dict:
-    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+    with DB_POOLS["student"].connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(SELECT_ACT_ROW_SQL, (student_id,))
             row = cursor.fetchone()

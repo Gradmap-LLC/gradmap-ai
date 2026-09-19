@@ -4,8 +4,8 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import anthropic
-import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,6 +21,14 @@ SCHOOLS_DB_CONFIG = {
     "password": os.environ["GM_DB_PASSWORD"],
     "dbname": os.environ["GM_DB_SCHOOLS_NAME"],
 }
+
+# The DB host is remote (~600ms per fresh connection), and nearly every call
+# here opens one -- fetch_all_recommendations alone used to open two per
+# request (itself plus ensure_student_recommendations_table). Pool once at
+# import instead. Row factory is left at the default (tuples) here since a
+# couple of call sites below unpack positionally; those opt into dict rows
+# per-cursor instead of baking it into the pool.
+SCHOOLS_POOL = ConnectionPool(kwargs=SCHOOLS_DB_CONFIG, min_size=1, max_size=5, open=True)
 
 
 ALLOWED_CATEGORIES = (
@@ -189,8 +197,8 @@ RETURNING id, title, dismissed
 
 
 def ensure_student_recommendations_table():
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(CREATE_STUDENT_RECOMMENDATIONS_TABLE_SQL)
             cursor.execute(ADD_STUDENT_RECOMMENDATIONS_COLUMNS_SQL)
 
@@ -206,7 +214,7 @@ def ensure_student_recommendations_table():
 
 def _store_recommendation(student_id, recommendation):
     google_calendar = _build_google_calendar_link(recommendation.get("title"), recommendation.get("subtext"))
-    with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
+    with SCHOOLS_POOL.connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 INSERT_RECOMMENDATION_SQL,
@@ -237,7 +245,7 @@ def update_recommendation_status(student_id, recommendation_id, status):
         raise ValueError(f"status must be one of {ALLOWED_STATUSES}, got {status!r}")
 
     ensure_student_recommendations_table()
-    with psycopg.connect(**SCHOOLS_DB_CONFIG) as connection:
+    with SCHOOLS_POOL.connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 UPDATE_RECOMMENDATION_STATUS_SQL,
@@ -250,8 +258,8 @@ def set_recommendation_target_date(student_id, recommendation_id, target_date):
     """target_date: an ISO date string ('YYYY-MM-DD'), or None to clear it.
     Student-set only -- the LLM never proposes a target_date, only urgency_rank."""
     ensure_student_recommendations_table()
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 SET_RECOMMENDATION_TARGET_DATE_SQL,
                 {"target_date": target_date, "id": recommendation_id, "student_id": student_id},
@@ -261,8 +269,8 @@ def set_recommendation_target_date(student_id, recommendation_id, target_date):
 
 def set_recommendation_title(student_id, recommendation_id, title):
     ensure_student_recommendations_table()
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 SET_RECOMMENDATION_TITLE_SQL,
                 {"title": title, "id": recommendation_id, "student_id": student_id},
@@ -271,8 +279,8 @@ def set_recommendation_title(student_id, recommendation_id, title):
 
 
 def fetch_recommendation(student_id, recommendation_id):
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(FETCH_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
@@ -280,8 +288,8 @@ def fetch_recommendation(student_id, recommendation_id):
 def delete_recommendation(student_id, recommendation_id):
     """Delete a recommendation or student-added task. Returns the deleted row
     (id, title), or None if no matching row exists for this student."""
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(DELETE_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
@@ -297,8 +305,8 @@ def dismiss_recommendation(student_id, recommendation_id):
     Returns the row (id, title, dismissed), or None if no matching row
     exists for this student."""
     ensure_student_recommendations_table()
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(DISMISS_RECOMMENDATION_SQL, (recommendation_id, student_id))
             return cursor.fetchone()
 
@@ -309,8 +317,8 @@ def fetch_all_recommendations(student_id):
     dashboard page refresh) -- recommendations() always calls the LLM and
     inserts new rows, so it's the wrong thing to call on every page load."""
     ensure_student_recommendations_table()
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(FETCH_ALL_RECOMMENDATIONS_SQL, (student_id,))
             return cursor.fetchall()
 
@@ -379,8 +387,8 @@ def _detect_task_template_estimated_time_column(cursor):
 
 
 def _fetch_active_task_templates():
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             estimated_time_column = _detect_task_template_estimated_time_column(cursor)
             estimated_time_select = f", {estimated_time_column} AS estimated_time" if estimated_time_column else ""
             cursor.execute(
@@ -390,8 +398,8 @@ def _fetch_active_task_templates():
 
 
 def _fetch_student_recommendations(student_id):
-    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
+    with SCHOOLS_POOL.connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(FETCH_STUDENT_RECOMMENDATIONS_SQL, (student_id,))
             return cursor.fetchall()
 
