@@ -1041,13 +1041,11 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
             </div>
             <div class="s">
               <div class="k">Majors of interest</div>
-              <div class="chips"><span class="chip">Computer Science</span><span class="chip">Engineering</span></div>
-              <div class="m"><span class="editlink">Edit</span></div>
+              <div class="chips" id="majors-chips"></div>
             </div>
             <div class="s">
               <div class="k">Schools you're looking at</div>
-              <div class="chips"><span class="chip">Large public</span><span class="chip">Research university</span><span class="chip">In-state + OOS</span></div>
-              <div class="m"><span class="editlink">Edit</span></div>
+              <div class="chips" id="school-char-chips"></div>
             </div>
           </div>
 
@@ -1526,6 +1524,36 @@ async function loadClassYear(){
   if (typeof data.grade === 'number'){ STUDENT.grade = data.grade; if (bootDone) renderGrowth(); }
 }
 loadClassYear();
+
+/* Majors of interest chips: student.additional_info.majors_interest_1/_2,
+   real per-student data (main.py's /majors-of-interest), not a guess. */
+async function loadMajorsOfInterest(){
+  const el = document.getElementById('majors-chips');
+  if (!el) return;
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/majors-of-interest`); }
+  catch (e) { return; }
+  el.innerHTML = data.majors.length
+    ? data.majors.map(m=>'<span class="chip">'+escHtml(m)+'</span>').join('')
+    : '<span class="m">None on file yet</span>';
+}
+loadMajorsOfInterest();
+
+/* School list characteristics: a handful of chips (1-5) summarizing the
+   active college list's public/private, size, setting and in-state mix --
+   computed server-side from schools joined to the student's active picks,
+   not one chip per school (main.py's /college-list/characteristics). */
+async function loadSchoolCharacteristics(){
+  const el = document.getElementById('school-char-chips');
+  if (!el) return;
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/college-list/characteristics`); }
+  catch (e) { return; }
+  el.innerHTML = data.characteristics.length
+    ? data.characteristics.map(c=>'<span class="chip">'+escHtml(c)+'</span>').join('')
+    : '<span class="m">Add schools to see your fit</span>';
+}
+loadSchoolCharacteristics();
 
 /* Term anchors: when a student on this system would have new grades.
    month is 0-indexed. Backend can override per school calendar.        */

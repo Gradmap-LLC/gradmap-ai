@@ -2,6 +2,7 @@ import argparse
 import html
 import json
 import os
+from collections import Counter
 from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import urlencode
@@ -337,6 +338,98 @@ app.add_middleware(
 @app.get("/students/{student_id}/college-list")
 def get_college_list(student_id: str):
     return _fetch_college_list(student_id)
+
+
+# --- "Schools you're looking at" characteristics -----------------------------
+# A handful of chips describing the shape of the student's active list (public
+# vs. private, size, setting, in-state vs. out-of-state), not a chip per
+# school -- a 1-school list and a 20-school list should both read as a couple
+# of characteristics, never a wall of chips. A characteristic only becomes a
+# chip when it actually describes most of the list (for a single school,
+# "most" is trivially all of it); a near-even split says nothing useful about
+# the list as a whole, so it's left out rather than mislabeled.
+
+SCHOOL_CHARACTERISTICS_SQL = """
+SELECT s.institution_type, s.size_category, s.campus_setting, s.state,
+       s.uc_system, s.csu_system, s.hbcu
+FROM student_school_picks pick
+JOIN schools s ON s.id = pick.school_id
+WHERE pick.student_id = %s AND pick.is_active = true
+"""
+
+MAX_SCHOOL_CHARACTERISTICS = 5
+
+
+def _fetch_school_characteristic_rows(student_id):
+    with psycopg.connect(**DB_CONFIG["gm_schools"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SCHOOL_CHARACTERISTICS_SQL, (student_id,))
+            return cursor.fetchall()
+
+
+def _fetch_student_home_state(student_id):
+    # schools.state is a 2-letter code ("CA") -- personal_information.state is
+    # the full name ("California"), so state_code is the one that lines up.
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT state_code FROM personal_information WHERE id = %s", (student_id,))
+            row = cursor.fetchone()
+    return row["state_code"] if row else None
+
+
+def _majority_label(values):
+    present = [v for v in values if v]
+    if not present:
+        return None
+    label, count = Counter(present).most_common(1)[0]
+    return label if count * 2 > len(present) else None
+
+
+def _compute_school_characteristics(student_id):
+    rows = _fetch_school_characteristic_rows(student_id)
+    if not rows:
+        return {"characteristics": []}
+
+    chips = []
+
+    institution_type = _majority_label([r["institution_type"] for r in rows])
+    if institution_type:
+        chips.append(institution_type)
+
+    size_category = _majority_label([r["size_category"] for r in rows])
+    if size_category:
+        chips.append(size_category)
+
+    campus_setting = _majority_label([r["campus_setting"] for r in rows])
+    if campus_setting:
+        chips.append(campus_setting)
+
+    home_state = _fetch_student_home_state(student_id)
+    school_states = [r["state"] for r in rows if r["state"]]
+    if home_state and school_states:
+        has_in_state = any(s == home_state for s in school_states)
+        has_out_of_state = any(s != home_state for s in school_states)
+        if has_in_state and has_out_of_state:
+            chips.append("In-state + OOS")
+        elif has_in_state:
+            chips.append("In-state")
+        elif has_out_of_state:
+            chips.append("Out-of-state")
+
+    if len(chips) < MAX_SCHOOL_CHARACTERISTICS:
+        if all(r["uc_system"] for r in rows):
+            chips.append("UC system")
+        elif all(r["csu_system"] for r in rows):
+            chips.append("CSU system")
+        elif all(r["hbcu"] for r in rows):
+            chips.append("HBCU")
+
+    return {"characteristics": chips[:MAX_SCHOOL_CHARACTERISTICS]}
+
+
+@app.get("/students/{student_id}/college-list/characteristics")
+def get_college_list_characteristics(student_id: str):
+    return _compute_school_characteristics(student_id)
 
 
 # --- Road to CAM: real Colleges/Tests readiness ---------------------------
@@ -1295,6 +1388,25 @@ def get_class_year(student_id: str):
     info = _compute_class_year_info(snapshot["personal_information"]["year_finish_high_school"])
     info["term_system"] = _normalize_term_system(snapshot["high_school"]["classes_schedule"])
     return info
+
+
+# student.additional_info is a JSON blob on the login/account row itself
+# (email, password, etc.) -- unlike every other per-student table, its
+# primary key `id` IS the same id used everywhere else as {student_id}, no
+# student_id column to join on.
+@app.get("/students/{student_id}/majors-of-interest")
+def get_majors_of_interest(student_id: str):
+    with psycopg.connect(**DB_CONFIG["student"], row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT additional_info FROM student WHERE id = %s", (student_id,))
+            row = cursor.fetchone()
+
+    info = _decode_json_value(row["additional_info"]) if row else None
+    if not isinstance(info, dict):
+        info = {}
+
+    majors = [info.get("majors_interest_1"), info.get("majors_interest_2")]
+    return {"majors": [m for m in majors if m]}
 
 
 class RecommendationStatusUpdate(BaseModel):
