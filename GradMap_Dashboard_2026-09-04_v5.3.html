@@ -1605,7 +1605,6 @@ const REVIEW_COPY = {
 };
 
 function statusOf(p){
-  if (p > 0)   return ['thin','Just started'];
   // "Ready" is reserved for actually-done (100%) -- READY_AT (80%) still
   // counts toward the aggregate ring/count elsewhere, but on the card itself
   // it reads as "Almost there", not a claim that nothing is left.
@@ -2241,6 +2240,9 @@ async function loadRecommendations(){
   TASKS = data.recommendations.filter(r => r.status !== 'not_started').map(mapTaskFromRecommendation);
   renderSugs(); renderSugPage(); renderNudges();
   renderTasks(); renderTimeline(); renderCalendar();
+  // momentum's "N tasks finished" milestone reads TASKS -- refresh it once
+  // real task data lands, in case it arrives after the first render.
+  if (bootDone) renderGrowth();
 }
 
 /* The dashboard card and the Suggestions screen render the same sugCard.
@@ -3129,7 +3131,8 @@ function levelOf(){
 function milestones(){
   const done = TASKS.filter(t=>t.st==='done').length;
   const out = [];
-  if (sectionPct('profile') >= 60)    out.push([true,  'Profile 60%']);
+  const profilePct = sectionPct('profile');
+  if (profilePct >= 60)                out.push([true,  'Profile '+profilePct+'%']);
   if (sectionPct('majors')  >= 80)    out.push([true,  'Majors picked']);
   if (done >= 1)                      out.push([true,  done+' task'+(done===1?'':'s')+' finished']);
   const nearest = SECTIONS.filter(x=>x.pct!==null && x.pct<READY_AT).sort((a,b)=>b.pct-a.pct)[0];
