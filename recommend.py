@@ -1,3 +1,4 @@
+import difflib
 import json
 import os
 from pathlib import Path
@@ -419,6 +420,44 @@ def _format_existing_recommendations(existing_recommendations):
     return "\n".join(lines)
 
 
+# The system prompt above ASKS the model not to duplicate an existing
+# recommendation, but that's a request, not a guarantee -- confirmed in
+# practice: a later call reproduced an earlier recommendation's title
+# word-for-word despite the instruction. This is the deterministic backstop:
+# checked concretely against the actual title/subtext text, so a repeat can't
+# get stored regardless of whether the model complied. 0.55 was picked
+# against real examples -- genuinely different recommendations score
+# 0.29-0.39, confirmed duplicates (including a case with reworded titles but
+# a shared subtext) score 0.58-1.0.
+DUPLICATE_SIMILARITY_THRESHOLD = 0.55
+
+
+def _normalize_for_similarity(text):
+    return " ".join((text or "").lower().split())
+
+
+def _similarity(title_a, subtext_a, title_b, subtext_b):
+    """Highest of: title-vs-title, subtext-vs-subtext, and both combined --
+    two recommendations can overlap heavily in one field without the other
+    matching as closely (reworded title, near-identical subtext, or vice
+    versa), so no single comparison alone is reliable."""
+    title_a, subtext_a = _normalize_for_similarity(title_a), _normalize_for_similarity(subtext_a)
+    title_b, subtext_b = _normalize_for_similarity(title_b), _normalize_for_similarity(subtext_b)
+    return max(
+        difflib.SequenceMatcher(None, title_a, title_b).ratio(),
+        difflib.SequenceMatcher(None, subtext_a, subtext_b).ratio(),
+        difflib.SequenceMatcher(None, f"{title_a} {subtext_a}", f"{title_b} {subtext_b}").ratio(),
+    )
+
+
+def _is_duplicate_recommendation(candidate, others):
+    return any(
+        _similarity(candidate.get("title"), candidate.get("subtext"), other.get("title"), other.get("subtext"))
+        >= DUPLICATE_SIMILARITY_THRESHOLD
+        for other in others
+    )
+
+
 def _format_estimated_time(value):
     if value is None or value == "":
         return None
@@ -538,7 +577,22 @@ def recommendations(student_snapshot, context="context/gradmap_context.json", ma
 
     )
     result = json.loads(_strip_code_fence(response.content[0].text))
-    result["recommendations"] = result.get("recommendations", [])[:max_recommendations]
+    candidates = result.get("recommendations", [])
+
+    # Two passes: against everything already on file (catches a repeat of an
+    # earlier call), then candidate-by-candidate against ones already
+    # accepted from this same response (the model can also duplicate itself
+    # within one call, which the "already tracked" prompt block can't catch
+    # since none of them exist yet when it's generating).
+    accepted = []
+    for candidate in candidates:
+        if _is_duplicate_recommendation(candidate, existing_recommendations):
+            continue
+        if _is_duplicate_recommendation(candidate, accepted):
+            continue
+        accepted.append(candidate)
+
+    result["recommendations"] = accepted[:max_recommendations]
 
     for recommendation in result["recommendations"]:
         if category is not None:

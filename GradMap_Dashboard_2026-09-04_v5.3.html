@@ -3240,8 +3240,6 @@ function milestones(){
   const profilePct = sectionPct('profile');
   if (profilePct >= 60)                out.push([true,  'Profile '+profilePct+'%']);
   if (done >= 1)                      out.push([true,  done+' task'+(done===1?'':'s')+' finished']);
-  const nearest = SECTIONS.filter(x=>x.pct!==null && x.pct<READY_AT).sort((a,b)=>b.pct-a.pct)[0];
-  if (nearest) out.push([false, 'Next: '+nearest.go.toLowerCase()]);
   return out;
 }
 
