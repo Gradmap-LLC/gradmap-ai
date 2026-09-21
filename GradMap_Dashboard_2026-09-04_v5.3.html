@@ -1033,7 +1033,10 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
             </div>
             <div class="s">
               <div class="k">GPA</div>
-              <div class="v">X.XX <small>W</small> &nbsp; X.XX <small>UW</small></div>
+              <div class="v" id="gpa-v">
+                <div>X.XX <small>W</small> &nbsp; X.XX <small>UW</small></div>
+                <div>X.XX <small>CAPPED</small> &nbsp; X.XX <small>UNCAPPED</small></div>
+              </div>
               <div class="m" id="gpa-updated">Last updated ·</div>
             </div>
             <div class="s">
@@ -1527,7 +1530,7 @@ const STUDENT_ID = 13;
 
 const STUDENT = {
   termSystem: 'semester',              // full_year | semester | quarter | trimester -- real value arrives via loadClassYear()
-  gradesLastUpdated: '2026-05-28',     // profile.courses_grades.last_updated
+  gradesLastUpdated: '2026-05-28',     // placeholder until loadGpa() resolves with the real gpa_forecast/gpa_forecast_detail date
   grade: null,                          // 1-12, or null while loading/unknown -- real value arrives via loadClassYear()
 };
 /* Class year, grade, season and term system are all computed server-side
@@ -1597,6 +1600,31 @@ async function loadSchoolCharacteristics(){
 loadSchoolCharacteristics();
 pollEvery(loadSchoolCharacteristics);
 
+/* GPA: weighted/unweighted (school scale) plus UC-recalculated capped/
+   uncapped, computed server-side from gpa_forecast_detail joined to
+   gpa_forecast via gpa_forecast_id (main.py's /gpa). Any of the four can
+   come back null when the underlying grades aren't on file yet -- shown as
+   "N/A" rather than left blank or zeroed. last_updated (also real, from the
+   same tables) replaces the STUDENT.gradesLastUpdated placeholder and feeds
+   back into checkStaleGrades() so the stale-grades banner uses it too. */
+function fmtGpa(v){ return (v === null || v === undefined) ? 'N/A' : v.toFixed(2); }
+function applyGpa(data){
+  const v = document.getElementById('gpa-v');
+  if (v) v.innerHTML =
+    '<div>' + fmtGpa(data.weighted_gpa) + ' <small>W</small> &nbsp; ' + fmtGpa(data.unweighted_gpa) + ' <small>UW</small></div>' +
+    '<div>' + fmtGpa(data.uc_capped_gpa) + ' <small>CAPPED</small> &nbsp; ' + fmtGpa(data.uc_uncapped_gpa) + ' <small>UNCAPPED</small></div>';
+  if (data.last_updated){ STUDENT.gradesLastUpdated = data.last_updated; checkStaleGrades(); }
+}
+async function loadGpa(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/gpa`); }
+  catch (e) { return; }
+  applyGpa(data);
+  cacheSet('gpa', data);
+}
+loadGpa();
+pollEvery(loadGpa);
+
 /* Term anchors: when a student on this system would have new grades.
    month is 0-indexed. Backend can override per school calendar.        */
 const TERM_ANCHORS = {
@@ -1619,7 +1647,7 @@ function checkStaleGrades(){
     if (when > updated && (!passed || when > passed.when)) passed = {when, label:a.label};
   });
   document.getElementById('gpa-updated').textContent =
-    'Last updated ' + updated.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    'Last updated ' + updated.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   if (passed){
     document.getElementById('stale').style.display = 'flex';
     document.getElementById('stale-txt').innerHTML =

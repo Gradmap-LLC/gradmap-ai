@@ -1487,6 +1487,102 @@ def get_majors_of_interest(student_id: str):
     return {"majors": [m for m in majors if m]}
 
 
+# --- GPA (snapshot card) ----------------------------------------------------
+#
+# gpa_forecast is one row per grade-level "forecast" a student has entered
+# (grade_no 9-12, occasionally more than one per grade -- e.g. a redo), and
+# gpa_forecast_detail is one row per course-term within that forecast,
+# linked back by gpa_forecast_id (NOT student_id alone -- a student can have
+# several forecast rows for the same grade_no). weighted_point/unweighted_point
+# are already computed per course (unweighted_point is a plain 4.0-scale
+# value; weighted_point adds +1 when is_weight_point is set), so this just
+# aggregates them -- it doesn't re-derive grade points itself.
+#
+# grading_scale isn't always 'A-F': some schools' forecasts are entered on a
+# raw percentage scale ('0-100', '1-100', ...), and for those rows
+# unweighted_point/weighted_point are stored as the raw percentage (e.g. 93),
+# not a 4.0-scale value. Restricting to grading_scale = 'A-F' keeps those out
+# of the average instead of letting a "93" silently pass as a 93.0 GPA.
+# Rows with a blank grade are ungraded (future/placeholder terms) and are
+# excluded the same way.
+GPA_FORECAST_DETAIL_SQL = """
+SELECT
+    gf.grade_no,
+    gf.updated_at AS forecast_updated_at,
+    d.grade,
+    d.credit,
+    d.unweighted_point,
+    d.weighted_point,
+    d.updated_at AS detail_updated_at
+FROM gpa_forecast_detail d
+JOIN gpa_forecast gf ON gf.gpa_forecast_id = d.gpa_forecast_id
+WHERE d.student_id = %s
+  AND gf.grading_scale = 'A-F'
+"""
+
+# UC recalculates GPA using only grades earned in 10th and 11th grade (not
+# freshman or senior year), and caps the total honors/AP/IB bonus at 8
+# semester-points -- "capped" applies that cap, "uncapped" doesn't.
+UC_GPA_GRADE_LEVELS = {10, 11}
+UC_GPA_BONUS_CAP = 8
+
+
+def _fetch_gpa_forecast_detail_rows(student_id):
+    with DB_POOLS["student"].connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(GPA_FORECAST_DETAIL_SQL, (student_id,))
+            return cursor.fetchall()
+
+
+def _average(total, count):
+    return round(float(total) / float(count), 2) if count else None
+
+
+def _compute_gpa_summary(student_id):
+    rows = _fetch_gpa_forecast_detail_rows(student_id)
+
+    last_updated = None
+    for row in rows:
+        for candidate in (row["forecast_updated_at"], row["detail_updated_at"]):
+            if candidate and (last_updated is None or candidate > last_updated):
+                last_updated = candidate
+
+    graded = [r for r in rows if r["grade"]]
+
+    credit_total = sum(r["credit"] for r in graded)
+    if credit_total:
+        weighted_gpa = _average(sum(r["weighted_point"] * r["credit"] for r in graded), credit_total)
+        unweighted_gpa = _average(sum(r["unweighted_point"] * r["credit"] for r in graded), credit_total)
+    else:
+        # Credit hours are often left blank on hand-entered/test transcripts --
+        # fall back to a plain per-course average instead of reporting nothing.
+        weighted_gpa = _average(sum(r["weighted_point"] for r in graded), len(graded))
+        unweighted_gpa = _average(sum(r["unweighted_point"] for r in graded), len(graded))
+
+    uc_rows = [r for r in graded if r["grade_no"] in UC_GPA_GRADE_LEVELS]
+    uc_count = len(uc_rows)
+    uc_uncapped_gpa = _average(sum(r["weighted_point"] for r in uc_rows), uc_count)
+    if uc_count:
+        bonus_points = sum(r["weighted_point"] - r["unweighted_point"] for r in uc_rows)
+        capped_total = sum(r["unweighted_point"] for r in uc_rows) + min(bonus_points, UC_GPA_BONUS_CAP)
+        uc_capped_gpa = round(float(capped_total) / uc_count, 2)
+    else:
+        uc_capped_gpa = None
+
+    return {
+        "weighted_gpa": weighted_gpa,
+        "unweighted_gpa": unweighted_gpa,
+        "uc_capped_gpa": uc_capped_gpa,
+        "uc_uncapped_gpa": uc_uncapped_gpa,
+        "last_updated": last_updated.date().isoformat() if last_updated else None,
+    }
+
+
+@app.get("/students/{student_id}/gpa")
+def get_gpa(student_id: str):
+    return _compute_gpa_summary(student_id)
+
+
 class RecommendationStatusUpdate(BaseModel):
     status: str = "not_started"
 
