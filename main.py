@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from psycopg.rows import dict_row
@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+from admin_events import fetch_global_events, import_global_events, parse_global_events_csv, verify_admin_api_key
 from apple_calendar import (
     AppleCalendarAuthError,
     AppleNotConnectedError,
@@ -2445,6 +2446,37 @@ def delete_own_event_endpoint(student_id: str, event_id: int):
     if result is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"id": result["id"], "title": result["title"], "removed": True}
+
+
+# --- Global (admin-uploaded) calendar events --------------------------------
+# The opposite of own-events above: admin-curated, the same for every
+# student, and with no student-facing write endpoint at all -- students only
+# ever read this list (admin_events.py). Each admin authenticates with their
+# own API key (minted via scripts/create_admin_api_key.py), sent as
+# X-Admin-Key -- never a single shared secret, so one admin's key can be
+# revoked without affecting anyone else, and every import is attributable to
+# a real person in admin_bulk_operations/admin_audit_logs.
+
+def require_admin(x_admin_key: str = Header(..., alias="X-Admin-Key")):
+    admin = verify_admin_api_key(x_admin_key)
+    if admin is None:
+        raise HTTPException(status_code=401, detail="Invalid or revoked admin API key")
+    return admin
+
+
+@app.post("/admin/events/upload")
+async def upload_global_events(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    content = await file.read()
+    try:
+        rows, parse_errors = parse_global_events_csv(content)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return import_global_events(rows, parse_errors, admin)
+
+
+@app.get("/students/{student_id}/global-events")
+def list_global_events_endpoint(student_id: str):
+    return {"events": fetch_global_events()}
 
 
 # --- "Your story" -------------------------------------------------------

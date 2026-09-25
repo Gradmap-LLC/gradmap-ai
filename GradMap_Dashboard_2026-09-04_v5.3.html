@@ -393,6 +393,7 @@ h1{font-size:24px;margin:0 0 3px}
 .evmore:hover{color:var(--accent)}
 .ev.hard{background:var(--alert-b);color:var(--alert)}
 .ev.tgt{background:var(--accent-soft);color:var(--accent)}
+.ev.global{background:var(--gm-warning-wash);color:var(--warn)}
 @media(max-width:760px){.cell{height:96px}.ev{font-size:9.5px;-webkit-line-clamp:2}}
 
 /* ---------- careers & majors funnel ---------- */
@@ -1996,6 +1997,7 @@ async function syncCalendar(){
 checkGoogleCalendarStatus();
 checkAppleCalendarStatus();
 loadOwnEvents();
+loadGlobalEvents();
 
 /* ---------- 4. Tasks ----------
    CAM-season tasks are deliberately NOT in this list. Anything whose
@@ -2721,11 +2723,35 @@ async function loadOwnEvents(){
   cacheSet('own-events', data);
 }
 pollEvery(loadOwnEvents);
+
+/* Admin-uploaded permanent events (main.py's /global-events, backed by
+   admin_events.py's global_events table) -- the same list for every
+   student, read-only here. Unlike OWN, there is no edit/delete path at all:
+   that's what "permanent" means for these, so renderCalendar() below never
+   wires a click handler onto them. */
+let GLOBAL = [];
+function applyGlobalEvents(data){
+  GLOBAL = data.events.map(e => ({id:e.id, t:e.title, sub:e.sub_info, d:new Date(e.event_date+'T00:00')}));
+  renderCalendar();
+}
+async function loadGlobalEvents(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/global-events`); }
+  catch (e) { return; }
+  applyGlobalEvents(data);
+  cacheSet('global-events', data);
+}
+pollEvery(loadGlobalEvents);
+
 function calEvents(){
   const ev={};
   OWN.forEach(o=>{
     if(o.d.getMonth()!==calCursor.getMonth()||o.d.getFullYear()!==calCursor.getFullYear()) return;
     (ev[o.d.getDate()]=ev[o.d.getDate()]||[]).push(['own',o.t,o.id]);
+  });
+  GLOBAL.forEach(g=>{
+    if(g.d.getMonth()!==calCursor.getMonth()||g.d.getFullYear()!==calCursor.getFullYear()) return;
+    (ev[g.d.getDate()]=ev[g.d.getDate()]||[]).push(['global',g.t,g.id,g.sub]);
   });
   TASKS.forEach(t=>{
     [['hard',t.hard],['tgt',t.target]].forEach(([kind,str])=>{
@@ -2773,11 +2799,18 @@ function renderCalendar(){
   for(let i=0;i<first;i++) html+='<div class="cell dim"></div>';
   for(let d=1;d<=days;d++){
     const all=ev[d]||[];
-    const rows=all.slice(0,2).map(e=>
-      e[0]==='own'
-        ? `<div class="ev own" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openOwnEvent(${e[2]})">${escHtml(e[1])}</div>`
-        : `<div class="ev ${e[0]==='hard'?'hard':'tgt'}" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openTaskEdit(${e[2]})">${escHtml(e[1])}</div>`).join('');
-    const nx=all[2]; const more=all.length>2?`<div class="evmore" onclick="event.stopPropagation();${nx[2]?`openTaskEdit(${nx[2]})`:''}">+${all.length-2} more</div>`:'';
+    const rows=all.slice(0,2).map(e=>{
+      if(e[0]==='own') return `<div class="ev own" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openOwnEvent(${e[2]})">${escHtml(e[1])}</div>`;
+      // Global (admin-uploaded) events are permanent -- no click handler, no
+      // "click to edit" hint. sub_info (e[3]), when present, folds into the
+      // tooltip since there's no room for it in the cell itself.
+      if(e[0]==='global') return `<div class="ev global" title="${escHtml(e[1])} · click for details" onclick="event.stopPropagation();openGlobalEvent(${e[2]})">${escHtml(e[1])}</div>`;
+      return `<div class="ev ${e[0]==='hard'?'hard':'tgt'}" title="${escHtml(e[1])} · click to edit" onclick="event.stopPropagation();openTaskEdit(${e[2]})">${escHtml(e[1])}</div>`;
+    }).join('');
+    const nx=all[2];
+    const more=all.length>2
+      ? `<div class="evmore" onclick="event.stopPropagation();${(nx[0]==='hard'||nx[0]==='tgt')?`openTaskEdit(${nx[2]})`:''}">+${all.length-2} more</div>`
+      : '';
     html+=`<div class="cell ${isThis&&d===NOW.getDate()?'today':''}" onclick="openEvent(${d})">
       <div class="dnum">${d}</div><span class="plusday">+</span>${rows}${more}</div>`;
   }
@@ -2910,6 +2943,22 @@ async function deleteOwnEvent(){
   }
   ownEventActionInFlight = false;
   OWN = OWN.filter(x=>x.id!==editOwn); closeTaskEdit(); renderCalendar(); syncCalendar(); toast('Event removed');
+}
+
+/* Read-only popup for a global (admin-uploaded) event -- reuses the same
+   #tovl/#tedit modal shell as openOwnEvent/openTaskEdit above, but with no
+   inputs and no save/remove: just what it is, when it is, and why. */
+function openGlobalEvent(id){
+  const g = GLOBAL.find(x=>x.id===id); if(!g) return;
+  editId = null; editOwn = null;
+  document.getElementById('te-h').textContent = g.t;
+  document.getElementById('tedit').innerHTML =
+      '<div class="f wide"><label>Date</label><div style="font-size:15px;font-weight:700;color:var(--ink)">'
+    + g.d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) + '</div></div>'
+    + (g.sub ? '<div class="why" style="margin-top:12px;font-size:13.5px">'+escHtml(g.sub)+'</div>' : '')
+    + '<div class="mfoot"><button class="ghost" onclick="closeTaskEdit()">Close</button>'
+    + '<span class="lands">Added by GradMap — this date can\'t be changed here.</span></div>';
+  document.getElementById('tovl').classList.add('open');
 }
 
 function openTaskEdit(id){
