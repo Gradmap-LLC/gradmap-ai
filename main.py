@@ -18,7 +18,17 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-from admin_events import fetch_global_events, import_global_events, parse_global_events_csv, verify_admin_api_key
+from admin_events import (
+    GlobalEventExistsError,
+    create_global_event,
+    delete_global_event,
+    fetch_global_events,
+    import_global_events,
+    list_global_event_imports,
+    list_global_events_for_admin,
+    parse_global_events_csv,
+    verify_admin_api_key,
+)
 from apple_calendar import (
     AppleCalendarAuthError,
     AppleNotConnectedError,
@@ -48,6 +58,7 @@ from outlook_calendar import (
     pop_pending_flow as pop_outlook_pending_flow,
     sync_events as sync_outlook_calendar_events,
 )
+from admin_auth import bearer_auth_enabled, verify_admin_bearer_token
 from term_dates import list_term_dates, save_term_dates
 from own_events import (
     add_own_event,
@@ -2579,11 +2590,82 @@ def delete_own_event_endpoint(student_id: str, event_id: int):
 # revoked without affecting anyone else, and every import is attributable to
 # a real person in admin_bulk_operations/admin_audit_logs.
 
-def require_admin(x_admin_key: str = Header(..., alias="X-Admin-Key")):
+# admin.html is embedded in another project where the admin is already signed
+# in via OAuth; that project passes the admin's access token to the page, which
+# sends it as `Authorization: Bearer <token>`. admin_auth.py verifies it (see
+# its docstring for the env vars). Accepted, in order:
+#   1. ADMIN_DEV_NO_AUTH=1 -- dev only, treats every caller as "Dev Admin".
+#      Never set it anywhere reachable: it makes every admin route public.
+#   2. Authorization: Bearer <OAuth token> -- when ADMIN_JWKS_URL is set.
+#   3. X-Admin-Key -- per-admin API keys, for scripts.
+# Every admin route depends on this one function.
+ADMIN_DEV_NO_AUTH = os.environ.get("ADMIN_DEV_NO_AUTH") == "1"
+DEV_ADMIN = {"id": 0, "admin_name": "Dev Admin"}
+
+
+def require_admin(
+    authorization: str | None = Header(None),
+    x_admin_key: str | None = Header(None, alias="X-Admin-Key"),
+):
+    if ADMIN_DEV_NO_AUTH:
+        return DEV_ADMIN
+
+    if authorization and authorization.lower().startswith("bearer ") and bearer_auth_enabled():
+        admin = verify_admin_bearer_token(authorization[7:].strip())
+        if admin is None:
+            raise HTTPException(status_code=403, detail="Not an admin, or the token is invalid or expired")
+        return admin
+
     admin = verify_admin_api_key(x_admin_key)
     if admin is None:
-        raise HTTPException(status_code=401, detail="Invalid or revoked admin API key")
+        raise HTTPException(status_code=401, detail="Admin sign-in required")
     return admin
+
+
+@app.get("/admin/me")
+def admin_me(admin: dict = Depends(require_admin)):
+    return {"admin_name": admin["admin_name"]}
+
+
+@app.get("/admin/events")
+def admin_list_global_events(admin: dict = Depends(require_admin)):
+    return {"events": list_global_events_for_admin()}
+
+
+@app.get("/admin/events/imports")
+def admin_list_global_event_imports(admin: dict = Depends(require_admin)):
+    return {"imports": list_global_event_imports()}
+
+
+class QuickAddGlobalEventRequest(BaseModel):
+    title: str
+    event_date: str  # 'YYYY-MM-DD'
+    sub_info: str | None = None
+    applicable_grades: list[int] | None = None  # None / empty = every grade
+
+
+@app.post("/admin/events")
+def admin_add_global_event(body: QuickAddGlobalEventRequest, admin: dict = Depends(require_admin)):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    try:
+        event_date = date.fromisoformat(body.event_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="event_date must be YYYY-MM-DD")
+    grades = sorted(set(body.applicable_grades)) if body.applicable_grades else None
+    try:
+        return create_global_event(title, event_date, (body.sub_info or "").strip() or None, grades, admin)
+    except GlobalEventExistsError:
+        raise HTTPException(status_code=409, detail="An event with this title and date already exists")
+
+
+@app.delete("/admin/events/{event_id}")
+def admin_delete_global_event(event_id: int, admin: dict = Depends(require_admin)):
+    deleted = delete_global_event(event_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"deleted": deleted}
 
 
 @app.post("/admin/events/upload")

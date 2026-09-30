@@ -319,3 +319,74 @@ def fetch_global_events():
                 "SELECT id, title, sub_info, event_date, applicable_grades FROM global_events ORDER BY event_date"
             )
             return cursor.fetchall()
+
+
+def list_global_events_for_admin():
+    """Every global event (past and upcoming) with who added it and when --
+    the admin page's table. Unlike fetch_global_events this includes audit
+    columns the student-facing calendar has no use for."""
+    ensure_admin_tables()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, title, sub_info, event_date, applicable_grades,
+                       created_by_admin_name, created_at, updated_at
+                FROM global_events ORDER BY event_date, title
+                """
+            )
+            return cursor.fetchall()
+
+
+def list_global_event_imports(limit=50):
+    ensure_admin_tables()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT operation_id, total_count, success_count, failure_count, error_details,
+                       admin_name, status, created_at, completed_at
+                FROM global_events_imports ORDER BY created_at DESC LIMIT %s
+                """,
+                (limit,),
+            )
+            return cursor.fetchall()
+
+
+class GlobalEventExistsError(Exception):
+    pass
+
+
+def create_global_event(title, event_date, sub_info, applicable_grades, admin):
+    """Quick-add of a single event. Unlike a CSV re-upload (which silently
+    updates on a matching title + date), this refuses a duplicate so a typo'd
+    second click doesn't overwrite an existing event without the admin knowing."""
+    ensure_admin_tables()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM global_events WHERE title = %s AND event_date = %s", (title, event_date)
+            )
+            if cursor.fetchone():
+                raise GlobalEventExistsError()
+            cursor.execute(UPSERT_GLOBAL_EVENT_SQL, {
+                "title": title,
+                "sub_info": sub_info,
+                "event_date": event_date,
+                "applicable_grades": applicable_grades,
+                "source_operation_id": None,
+                "admin_id": admin["id"],
+                "admin_name": admin["admin_name"],
+            })
+            return cursor.fetchone()
+
+
+def delete_global_event(event_id):
+    """Returns the deleted row's {id, title, event_date}, or None if no such event."""
+    ensure_admin_tables()
+    with psycopg.connect(**SCHOOLS_DB_CONFIG, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM global_events WHERE id = %s RETURNING id, title, event_date", (event_id,)
+            )
+            return cursor.fetchone()

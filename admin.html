@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GradMap · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root {
+/* ---------------------------------------------------------------
+   GENERATED FROM gradmap-tokens.css v2 - do not edit values here.
+   Change a token in that file and re-generate. Everything below
+   the divider is a local alias so this page's existing class
+   names keep working; no value is defined twice.
+   --------------------------------------------------------------- */
+
+
+  /* ---------- 1. brand, exactly as published ---------------
+     The guide names these and no others. Anything not on this
+     list is a product colour, derived below, and says so.     */
+
+  --gm-brand-periwinkle:  #3E73F0;  /* accent, CTAs, links      */
+  --gm-brand-deep-blue:   #121D31;  /* logo, headlines, text    */
+  --gm-brand-light-grey:  #DEDEDE;  /* logo lockup only         */
+  --gm-brand-papaya:      #FC805F;  /* secondary. NOT a status  */
+  --gm-brand-frosted:     #9FE7F5;  /* backgrounds, highlights  */
+  --gm-brand-white:       #FFFFFF;
+
+  /* ---------- 2. text ---------------------------------------
+     Every text colour is Deep Blue or a lighter step of it at
+     the same hue (219 degrees), so type reads as one family
+     with the logo. Contrast is measured against --gm-canvas,
+     then against --gm-surface, in that order on each line.
+
+     CORRECTED  the base was #1C3350. That is not a brand
+     colour. Deep Blue is #121D31 and the ramp is rebuilt from
+     it, which is why every step below shifted.               */
+
+  --gm-ink:            #121D31;  /* headings, primary  15.90 / 16.86 */
+  --gm-ink-strong:     #324569;  /* body strong         9.04 /  9.59 */
+  --gm-ink-body:       #475A7E;  /* body                6.53 /  6.93 */
+  --gm-ink-muted:      #596B8B;  /* labels, secondary   5.08 /  5.38 */
+  --gm-ink-disabled:   #A2ACBF;  /* decorative only.    2.15 /  2.29
+                                    NEVER carries readable text.     */
+  --gm-ink-on-dark:    #FFFFFF;
+
+  /* CORRECTED  --gm-ink-fine #232020 is removed. The guide has
+     no near black. Fine print uses --gm-ink-muted at a smaller
+     size, which is a size decision, not a colour one.        */
+
+  /* ---------- 3. accent ------------------------------------
+     Periwinkle as published measures 4.27:1 on white, under
+     the 4.5:1 AA floor for small text. So the accent is split
+     by job: --gm-accent is a fill, a marker and a focus ring
+     and never carries text. --gm-accent-ink is the same hue
+     one step darker and carries everything that is read.      */
+
+  --gm-accent:         #3E73F0;  /* fills, markers      4.03 /  4.27 */
+  --gm-accent-ink:     #3568DE;  /* text, links         4.73 /  5.02 */
+  --gm-accent-hover:   #2A5CD0;  /*                     5.59 /  5.93 */
+  --gm-accent-tint:    #D6E4FD;  /* avatar fill, selected chip       */
+  --gm-accent-wash:    #EDF3FE;  /* selected row, hover fill         */
+
+  /* ---------- 4. frosted blue family -----------------------
+     CORRECTED  the aqua was #A9EAF6. Frosted Blue is #9FE7F5.
+     The washes below are Frosted Blue over white, so the
+     family traces back to a published colour.                */
+
+  --gm-aqua:           #9FE7F5;  /* the brand value                  */
+  --gm-aqua-wash:      #E4F8FC;  /* hero backgrounds, large soft areas */
+  --gm-aqua-tint:      #EEFBFD;  /* the faintest usable step         */
+
+  /* ---------- 5. surfaces ----------------------------------
+     Backgrounds lean light aqua and white with navy text, per
+     the guide. The canvas is Periwinkle and Frosted Blue at
+     their faintest over white, which is what keeps the
+     product reading cool rather than neutral grey.           */
+
+  --gm-canvas:         #F4F9FC;  /* the page plane                   */
+  --gm-surface:        #FFFFFF;  /* a card sitting on the canvas     */
+  --gm-nested:         #F7FBFD;  /* a panel inside a surface         */
+  --gm-sunken:         #E8F1F7;  /* inset wells, neutral chips       */
+  --gm-dark-surface:   #121D31;  /* reversed. Use --gm-ink-on-dark   */
+
+  --gm-hairline:       #DDE7F0;  /* the only separator colour        */
+  --gm-hairline-strong:#C6D6E4;  /* control borders, hover           */
+
+  /* ---------- 6. status ------------------------------------
+     Colour has a job or it does not appear.
+       success  complete
+       warning  needs attention
+       danger   a deadline the student cannot move
+       accent   interactive, and handed to you awaiting action
+     Each ships with a label or an icon. Never colour alone.
+
+     The guide names no status palette, so this is product
+     layer. Validated as a set for colour vision deficiency.
+     Worst adjacent pair, CIE dE:
+       normal 58.6   deutan 35.3   protan 22.2   tritan 15.6
+
+     Papaya is a brand colour but it is NOT the warning. Swapped
+     in, it collides with success at protan dE 11.8, which is
+     below the readable floor. Papaya keeps its brand role in
+     illustration, marketing and empty state art.             */
+
+  --gm-success:        #0F9D76;  /* fill.  3.44 on white             */
+  --gm-success-ink:    #0B7A5C;  /* text.  5.01 / 5.31               */
+  --gm-success-wash:   #E6F6F1;
+
+  --gm-warning:        #E39A0B;  /* fill.  2.36 on white.
+                                    Label mandatory, never alone.    */
+  --gm-warning-ink:    #B45309;  /* text.  4.74 / 5.02               */
+  --gm-warning-wash:   #FDF3E2;
+
+  --gm-danger:         #D03B3B;  /* fill.  4.80 on white             */
+  --gm-danger-ink:     #B02525;  /* text.  6.31 / 6.69               */
+  --gm-danger-wash:    #FDEDED;
+
+  --gm-neutral-wash:   #E8F1F7;
+
+  /* ---------- 7. radius ------------------------------------
+     A surface on the page canvas is 16. Anything nested inside
+     one is 10. Rows inside that are flat with an inset
+     hairline. Controls are pills. Two nearly equal curves read
+     as a mistake, so there is no value between 10 and 16.     */
+
+  --gm-radius-surface: 16px;
+  --gm-radius-nested:  10px;
+  --gm-radius-row:     0;
+  --gm-radius-control: 999px;
+  --gm-radius-avatar:  50%;
+  --gm-radius-marker:  2px;  /* active underline markers, not a container */
+
+  /* ---------- 8. elevation ---------------------------------
+     Separation is space, then elevation, then a border. In
+     that order. Cards have no border. These shadows are tinted
+     Deep Blue, not black, so they sit correctly on the canvas. */
+
+  --gm-elev-surface: 0 1px 2px rgba(18,29,49,.05),  0 4px 12px -4px rgba(18,29,49,.10);
+  --gm-elev-raised:  0 2px 4px rgba(18,29,49,.06),  0 12px 28px -10px rgba(18,29,49,.16);
+  --gm-elev-overlay: 0 4px 8px rgba(18,29,49,.08),  0 24px 48px -16px rgba(18,29,49,.24);
+  --gm-focus-ring:   0 0 0 3px rgba(62,115,240,.35);
+
+  /* ---------- 9. gradients ---------------------------------
+     The guide publishes two. Frosted Blue to Periwinkle is the
+     product gradient. Purple to Green is marketing only and
+     has no token here on purpose, so it cannot reach a screen
+     by accident.
+
+     CORRECTED  the midpoint was #5C99F0, which is not a
+     published colour. It is now the computed midpoint of the
+     two ends the guide names.
+
+     Approved product uses, and no others: the frame accent
+     rule, progress meters, hero washes, the logo mark.
+     Never underneath text. Never a full width saturated band. */
+
+  --gm-gradient:       linear-gradient(135deg, #9FE7F5 0%, #6FADF3 55%, #3E73F0 100%);
+  --gm-gradient-meter: linear-gradient(90deg,  #6FADF3 0%, #3E73F0 100%);
+  --gm-gradient-wash:  linear-gradient(180deg, #E4F8FC 0%, #FFFFFF 100%);
+
+  /* ---------- 10. space ------------------------------------ */
+
+  --gm-space-1:  4px;
+  --gm-space-2:  8px;
+  --gm-space-3: 12px;
+  --gm-space-4: 16px;
+  --gm-space-5: 24px;
+  --gm-space-6: 32px;
+  --gm-space-7: 48px;
+
+  /* ---------- 11. type -------------------------------------
+     CORRECTED  the screens set Poppins and attributed it to
+     the brand guide. The guide names Stolz Bold as the primary
+     typeface and Nunito Sans Light, Regular and Bold as the
+     web typeface. Poppins appears nowhere in it.
+
+     --gm-font-display is Stolz where it is licensed and served,
+     falling back to Nunito Sans everywhere else, so a screen
+     never breaks waiting on the licence. --gm-font-ui is
+     Nunito Sans for all product chrome and body text.        */
+
+  --gm-font-display: 'Stolz', 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --gm-font-ui:      'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --gm-text-xs:  11.5px;
+  --gm-text-sm:  12.5px;
+  --gm-text-md:  14px;   /* body. The default size on every surface  */
+  --gm-text-lg:  16px;
+  --gm-text-xl:  20px;
+  --gm-text-2xl: 26px;
+
+  --gm-weight-regular:  400;
+  --gm-weight-medium:   500;
+  --gm-weight-semibold: 600;
+  --gm-weight-bold:     700;
+
+  --gm-leading-tight: 1.25;
+  --gm-leading-base:  1.5;
+  --gm-tracking-head: -0.015em;
+
+  /* ---------- 12. motion ----------------------------------- */
+
+  --gm-ease:      cubic-bezier(.2,.7,.3,1);
+  --gm-dur-fast:  120ms;
+  --gm-dur-base:  200ms;
+  --gm-dur-slow:  320ms;
+
+  /* ---------- page chrome, not colour --------------------- */
+  --gm-gutter:     28px;    /* page edge                      */
+  --gm-max:      1280px;    /* content width, matches CAM max-w-7xl */
+  --gm-bar-height: 60px;
+  --gm-rail-width:244px;
+  --gm-bar-bg:   rgba(255,255,255,.72);
+  --gm-bar-blur: saturate(180%) blur(20px);
+
+  /* ---------- local aliases (no new values) ---------------- */
+  --bg:var(--gm-canvas);           --panel:var(--gm-surface);
+  --ink:var(--gm-ink);             --muted:var(--gm-ink-muted);
+  --line:var(--gm-hairline);       --hair:var(--gm-hairline);
+  --tint:var(--gm-nested);         --track:var(--gm-sunken);
+  --grey:var(--gm-brand-light-grey); --frost:var(--gm-aqua);
+
+  --accent:var(--gm-accent-ink);   --accent-mid:var(--gm-accent);
+  --accent-soft:var(--gm-accent-wash); --accent-line:var(--gm-accent-tint);
+
+  --good:var(--gm-success-ink);    --good-fill:var(--gm-success);
+  --good-b:var(--gm-success-wash);
+  --warn:var(--gm-warning-ink);    --warn-fill:var(--gm-warning);
+  --warn-b:var(--gm-warning-wash);
+  --alert:var(--gm-danger-ink);    --alert-b:var(--gm-danger-wash);
+
+  --r-card:var(--gm-radius-surface); --r-ctl:var(--gm-radius-nested);
+  --r-chip:var(--gm-radius-nested);  --r-pill:var(--gm-radius-control);
+  --shadow:var(--gm-elev-surface);   --shadow-lift:var(--gm-elev-raised);
+
+  font-family:var(--gm-font-ui);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+button{font-family:inherit}
+.ico{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;flex:none}
+
+/* ---------- shell (same bar + rail as the student app) ---------- */
+.app{display:flex;min-height:100vh}
+.side{width:232px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:14px 10px 16px;display:flex;flex-direction:column;gap:1px;position:sticky;top:0;max-height:100vh;overflow-y:auto}
+.side .grp{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:14px 10px 6px}
+.side .grp:first-child{padding-top:2px}
+.side .nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-ctl);cursor:pointer;font-size:13.5px;color:var(--gm-ink-strong);font-weight:600;border:0;background:none;text-align:left;width:100%}
+.side .nav:hover{background:var(--gm-nested);color:var(--ink)}
+.side .nav.active{background:var(--accent-soft);color:var(--accent);font-weight:800}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{height:64px;flex:none;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+.topin{max-width:1280px;margin:0 auto;height:100%;padding:0 32px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.logo{display:flex;align-items:center;gap:12px}
+.logo img{height:26px;width:auto;display:block}
+.plan{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line);font-weight:800;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;padding:3px 8px;border-radius:var(--r-chip)}
+.top-r{display:flex;align-items:center;gap:10px;font-size:12.5px}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px}
+.who{color:var(--ink);font-weight:700}
+.wrap{padding:22px 32px 64px;max-width:1280px;width:100%;margin:0 auto}
+h1{font-size:24px;margin:0 0 3px}
+.lede{color:var(--muted);font-size:13.5px;margin-bottom:18px}
+
+/* ---------- cards, buttons, inputs ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);margin-bottom:14px}
+.card>.hd{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card>.hd h2{font-size:14px;margin:0;font-weight:800;letter-spacing:.1px}
+.card>.hd .sub{color:var(--muted);font-weight:600;font-size:12px}
+.card>.hd .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.card>.bd{padding:16px}
+.btn{background:var(--accent);color:#fff;border:0;border-radius:var(--r-pill);padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{background:var(--gm-accent-hover)}
+.btn[disabled]{background:var(--gm-hairline-strong);cursor:not-allowed}
+.btn.ghost{background:var(--panel);color:var(--accent);border:1px solid var(--accent-line)}
+.btn.ghost:hover{background:var(--accent-soft)}
+.search{border:1px solid var(--line);border-radius:var(--r-pill);padding:7px 13px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff;width:220px}
+.search:focus,select.sel:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+select.sel{border:1px solid var(--line);border-radius:var(--r-pill);padding:7px 12px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff}
+
+/* ---------- upload ---------- */
+.drop{border:1.5px dashed var(--gm-hairline-strong);border-radius:var(--r-card);background:var(--gm-nested);padding:26px 16px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s}
+.drop:hover,.drop.over{background:var(--accent-soft);border-color:var(--accent)}
+.drop b{display:block;font-size:14px;margin-bottom:3px}
+.drop span{color:var(--muted);font-size:12.5px}
+.drop .ico{width:26px;height:26px;color:var(--accent);margin-bottom:6px}
+.filerow{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.filename{font-weight:700;font-size:13px}
+.spacer{flex:1}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}.side{display:none}.topin,.wrap{padding-left:16px;padding-right:16px}}
+.help{font-size:12.5px;color:var(--muted);line-height:1.5}
+.help code{background:var(--gm-sunken);border-radius:5px;padding:1px 5px;font-size:12px;color:var(--gm-ink-strong)}
+
+/* ---------- result + banners ---------- */
+.banner{display:flex;align-items:flex-start;gap:9px;padding:11px 14px;border-radius:var(--r-ctl);font-size:13px;margin-bottom:14px;border:1px solid}
+.banner.ok{background:var(--good-b);color:var(--good);border-color:var(--good-b)}
+.banner.warn{background:var(--warn-b);color:var(--warn);border-color:var(--warn-b)}
+.banner.err{background:var(--alert-b);color:var(--alert);border-color:var(--alert-b)}
+.banner b{font-weight:800}
+.errlist{margin:6px 0 0;padding-left:18px;font-size:12.5px}
+
+/* ---------- tables ---------- */
+.tscroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--gm-nested)}
+td.date{white-space:nowrap;font-weight:700}
+td .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.chip{display:inline-block;background:var(--gm-sunken);color:var(--gm-ink-strong);border-radius:var(--r-chip);padding:2px 8px;font-size:11.5px;font-weight:700;margin:0 4px 2px 0}
+.pill{display:inline-block;border-radius:var(--r-pill);padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.2px}
+.pill.good{background:var(--good-b);color:var(--good)}
+.pill.warn{background:var(--warn-b);color:var(--warn)}
+.pill.bad{background:var(--alert-b);color:var(--alert)}
+.pill.past{background:var(--gm-sunken);color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:34px 12px;font-size:13px}
+details.errs summary{cursor:pointer;color:var(--accent);font-weight:700;font-size:12.5px}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:var(--r-pill);font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s;z-index:90}
+#toast.show{opacity:1}
+.xbtn{width:26px;height:26px;border-radius:50%;border:0;background:transparent;color:var(--gm-danger);cursor:pointer;display:grid;place-items:center;padding:0}
+.xbtn:hover{background:var(--alert-b)}
+.xbtn .ico{width:15px;height:15px;stroke-width:2.4}
+th.act,td.act{width:44px;text-align:right}
+.ovl{position:fixed;inset:0;background:rgba(18,29,49,.32);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:60px 16px;overflow-y:auto}
+.ovl.open{display:flex}
+.modal{background:#fff;border-radius:var(--r-card);box-shadow:0 24px 60px rgba(18,29,49,.28);width:100%;max-width:480px}
+.modal .mhd{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.modal .mhd h3{margin:0;font-size:15px;font-weight:800;flex:1}
+.modal .mhd .x{background:none;border:0;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;padding:0 4px}
+.modal .mbd{padding:18px}
+.modal .mfoot{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+.btn.danger{background:var(--gm-danger)}
+.btn.danger:hover{background:var(--gm-danger-ink)}
+.f{display:flex;flex-direction:column;gap:5px;margin-bottom:13px}
+.f label{font-size:11.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
+.f input[type=text],.f input[type=date],.f textarea{border:1px solid var(--line);border-radius:var(--r-ctl);padding:9px 11px;font-size:14px;font-family:inherit;color:var(--ink);background:#fff;width:100%}
+.f textarea{resize:vertical;min-height:62px;line-height:1.45}
+.f input:focus,.f textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.gchips{display:flex;gap:7px;flex-wrap:wrap}
+.gchip{border:1px solid var(--line);background:#fff;color:var(--gm-ink-strong);border-radius:var(--r-pill);padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.gchip:hover{border-color:var(--gm-hairline-strong)}
+.gchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.tip{font-size:12px;color:var(--muted);margin-top:12px}
+.tip kbd{background:var(--gm-sunken);border-radius:5px;padding:1px 6px;font-size:11.5px;font-family:inherit;font-weight:700;color:var(--gm-ink-strong)}
+.formerr{color:var(--alert);font-size:12.5px;font-weight:700}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="grp">Calendar</div>
+    <button class="nav active" data-tab="events" onclick="showTab('events')">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Global events</button>
+    <button class="nav" data-tab="history" onclick="showTab('history')">
+      <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Import history</button>
+  </aside>
+
+  <div class="main">
+    <header class="top"><div class="topin">
+      <div class="logo"><img alt="GradMap" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAABACAYAAAD8tgnEAAAzOElEQVR42u19eXxcV3X/95x730jeEtuJF8l2FpOFKk1ia2xngUShhdQNxJacTsNWoCyGFCillNK0NEIU6EILlECh/kGBsqVMYstOgHShRE2a0sRjOwTUAI6DE3vkJbYTx7Gkefee8/vjvjcaSTPSSLZZEt3PZz76fEZv3rvvLt97zvdshKn2/Gu5nEE+7xdl114DtnepSKxQKv9f4QlU4iiKJI47i9s2fRptbRY9PW5q8J7bzU4NwfO98QyQgMBDXxEAVYAYQjp7aoymAGGqPQ+agBxDAVVJYKCyOaha1qk1MgUIJyKKHjhAJ72XPdcI0CVT03VyGwk8SAEQjQIEBQEgBUVTIzUFCBNsnUHezHf5U9PNnqmZOgXNC7w144AGdAoQpgCh/kMGbW0GPV0OABa1dvwaDL9WvVgAUFIPJamyyOKR3ympkHICKKpQeGXOMNAI0oePq/3CkUL+aPn8mmonLiGwCDA2IhCNc8FUmwKEsnqQz3v09Lj5K9YttYQugF9LbEA0zn6l2lqFqoKIwCaCL/VDobfGqnceKbQ8MwUGJ6nlWxQA2MOrUVThDyo1hykOYQoQ6lMPmrKvmM7U8AcK/WMme7r4kqr3k1IblOABJeYoI971i3ef45j/eu9D+b3hiu6p2TrpEoKR8dBVoVOAMAUIdagHK9bdANAHydgW9THElTyIDGiiIKMChbKJGqAKFbkD7D9UfHDzDgBI7N9+SjL4+TQmmlIZnk/zXbd6ACh6elzzyrXLFq1YdyexuR1ELRKXXCLnT3ThKFQ9sWW2GaMqPYr4pcXCHb9VfHDzjuSZlDjDTIHBqZAQjMh4I6ta5xqZas8HCSFngLwgn/fNK9vPIKWbVemdxDYTJAIQaMI6pkLhidmSsUa8+4GS+1Bx68Z/GeImWvTUWSymWtpitmJExkQDTJGKU4AAgJDLMfJ5DwBN2XVvIqFOsnaJutKQejBhokA9iA1HkRXv9ogv/Q0Qf75v613H0dYW+pLPT7nH/gI1VZ2SEJ7HgJDwBD0O+bxval17FXH0YWa+SsVD4pIDwUwYDFQ9iAxHDUZ8/LR6d6s4/uS+HXccLF9T9pPvZLTdwz8H3oCAzsC253opMPFdOsE+hHvkeoez9pO71+Tfodx/YKznqjjGz08joGFS44m8a+oMN3++/lzGevgcAz8fFTcZz2QNT7IvNIwnSCSC5hVrlwC2kwhvAjHUxT44uxNNEAgEBLDJsHjvwPinWPzfHCx0P5pesnBlx2pDZrk69zBZ2rH3gU17qvVpQrxIWxtj/vzaA5HPy9BAdXLYQPlJqigTALDAi4x4/om2Op6fepCWr+lkoEsWLeu4VC3tgGo1xc6xjaz4+CvFwqbfGRXclL7LWG34ewapM3zvq79DHR6pQ2M49nydfDI69D+Moxu3j8PGu45Wj5fv6OeGA3z+fK05HhNcczRsQ2SzUTPOficx3UxkzxRf0rCpiUctl/TeOvIhqROCEpnIBO5Qu1X8h/q2dRfSqxZkc6ss5P1gup7YQFWg3h0j0P8K+LZBc+wbhx+4+2h5wZx81+VhahFyOdO0C4uIMVcgNgL645gP7NuRP1hzoMOpUO5X88r2M8iZRWoxD85NJ0NOYZ62zH2P+zl7UNgQjwC7EwCGxPw74vniGuYTyXS2zqlkDs8+Lvt7e/OlEf0moMudECBMpFUB9qXZ3OkDHFs20fE938v3jzsuI+5xxpVrZmUGzfkAnUWK2cTwAD0Jozv3/u/Gn5zgoVJ7naQH2bLcPFB8pmXMUiUmxjFWHHr8FZfsR1fFWj3hea6vT9ns+uiA7JvnLc8kZo2ROXpg9YUHJ9qXMiItbl33G8L4MLPNqjiISkzBKYXKl1L4G/4Qqn6f/k8VIv4+VfxFX+GOfysv2hVrLiS171PC65ktiy9J8GZUArEhY0AgiPjdqvq3fYWNnwagdUwsAdDFy3PnacTLxQ+WSFTEkCMlxwovkBjUIBL3F/d//87HAGDhio6VBvRGKF4i0LOJqJEUIGPhffyNvsKmG0c8ewS/0tHKRO2i+HVAX0hEc4nM0MiqQsWXAHocRA8AuiU+br55sDd/bNJgV9Gf8HzuUMhLoPgVAHOJGBqAeICAIkA7iOludvE3n9i+pZjeY+HOweXGRA+qimJ0LMOYgLAw2/5hw2apeqc6QnIkqJLJEAk+smcpepO+0qLsut8U4AYirITqQgUigJ4h0p1Q+g7I3V7cuuVHozbyMOl13fVE9BoVvYqImolNJd8BFe+I6AeqeruP9f/t//6mA5MGhYrfzWvJzTTT42sZ/JtQXQXQWYDOTs9KVQWgx0DYA1CBib8NQ9/e87384THmmQAoOju5+a4dfway86BekziS8mCCDEHlYPEVl3wYvUPS7LyVuYUWcj2JrgZwKaALAUwL+52eBWEvQAWA7xrMlL556P4tz4y35qgp29FKRLewzayFAuJLgIoQmyQQTgGIKKhEihiEQQVKUB0gogEA/cnnePI5BubjCu3pe3DjbQAEAM7KdjTF4Hcz6e8R2xni4zK3MGwZhsg7EBtDxkJ8fC9K8ubi97t/POYplfxvUWvHH5jGGR/38UACTJVCjYKjBvhS/y3FmYf/ctGzZ34SwNuILal6qJTBM2abicSV/qpY2HRzxXM5fZ9F2XUvUaL3EXAtGUsqAlUfmPnEtyKZUAaIiLn8qiL+p1D9VHHmob8P960bFNIgJEmA7BaAXj76+dAUqYkI6aYRcUcIdJuS/0Txwe4fL8quuQwUfW8sQPC+dFtfoftVIzdVU7b9MRtNO0fFYbSjo4JMBn7g2Jri9s13LlzesZoNdxHzKgIFaTCMUzhGmEHEEB8PqOJrKgMf3Lf9W7vR1mZTcXhBds1LLEUfJuYrAIKKD0tF1VdIpQwiJjYgNhDv+lTkvX3bNn11wqCQXD8n+9LTp+G0d4Lozczm7FQTTp6NYSoREYi4LFCL+D4C/ulY7P726Yc2P1WlD5Qeds274j6TmT5v9HgqiCxc3H+4b6ltQj5fasq+4iyizHugeC2baG5iwQ9jmkp7o/uyG6S3Fo8c/xR23j1YazxoUWvH5WJpIZzvB7GwYrUQ3s6g3/Skx6zKgHozoNYP+BIPNpKUStaX5vRPc8NE0Rpt7qrVpzX46W8joj9kYxeIiwGVOqwUIZ6BbcaqyCFoKbe3sOW7NUEh+b45u+4mNtGt4koOqZddKrwoCRnDIu6bUDrDRA1XihtUKDxIuRz1FzaD8b70mr5C99cr1YOm7CumE2U+RsRvJSKId4DCBQmHGNXdgDV5H60EO3Xx/YLSq/oKdz1eByhQuviaV6zrBOj9zMYGYB32/ErJb9hzwWyYI6i6Z8XL+1Vpm7F8j4oLyQ+qAkJVKQlNre3bmO3Fqk6gI1VKFTIRq/rfVMFKtvYjUIX6OGzeobFODwEN38OyzUC9OwTou/du3fjl8L7ttxDZLoCSewB1jLUQG0vGQuLBzuK27g/WrfaUE8h0vFzBn2Rrl6p3UPHV+k+155kNmQji3aPw/neK27v/Z5S0OQQIPyCy540aT1IhGBb4x/oK3Rc0Z9vfBuIPs4nmio8BET+0xkdyfFXX3HZReUvftu5CtfEYNaBNre1vYRttUI3PLD7YfWjcwctmowXx3IxpmNFonDSAeZpCpzviRhJdRmzey8aeHwZUXGLXrp+cVDhitgoMeI2v21/Y8t2q6JYCQmvH73GU+XRiEbHVbkgcvlbvagGTgohUNdtX2LQtvfeCSzrmmwxtYZO5TNxAkAIm5cmnAsCzyUTi3WMcmav2fC9fDAxxVVAgAGhpyUVPTfdfZZP5rQBkKhN8fgA/JktsoN49DujiUWBQDyBk2x9itpeoOKn6+7A5fkRsX6ji6+1r4qxmLLGF+IG/BGgG28bfFzcoE3eAU4GScJSxzg3etK/Q/dlxJYXywbL2PWQyfxuAzLnkuRMN7VdAHbGNABwXH6/u27b5XnR28jDdHqDmbHtvGKuR46lKbEhFfgrF/3CUeZX6GCo6wb0UDlgykVWVftL4dXsLW24fCQq2TCo+84zFrFmOdrlzmS2k5M5HLvcUds1hFJp82ZSRmCWbWttvZhu9WlzcgIimq0ejZ25QIEPgiEFE1gKq8G6wlDALHAaJhqwQ4WSo/WIEq+I9sWk0FG1ctGzdqr35/E8mTzQSwqADY4KByJEojh9LzVnzWnIzTeS/xSbKihuIAYrGmAqtBbjJ1wyAxZdiNplzfRzn0dZ2Neb3KvJDksBwzqJFj0z7/u3GNFyfPN9OAowIBAtVVRcLsTkr0dBOiRmMyAwt8Pr6SiCyql7VeyXTcDOgkHhAEvl3ol1gkJK4kmcyn1yy8oZ7n8jne2uunQAWrinb8ftsM38rruShOpbznY51uCZqW6TeOzJmOrG5Y8nyNcue6OraV6l+JntCaw1jUGXpHDLmHIkHJeiBEw0RCL9RH3tingbO5BdlO357b8+mfCVIhoHJ5z36+z3yea/QJhBBmWYin/dYeiQxBXUJcjlGT49bkG1fxcZ+BIpfZWPOZ+JFxHwGiGcSOJPwSio+jtU7z2wzxjZEbDOG2DKIiIiJbcawjSyIKOiCNd/FBFDg2Wrkq2hrs4n9d5LJWIirnGqachhEBkS06/GHv3kkHSzbEN/KNpMVNxjAoPrp65LTP+mbSviuFqtLkfhSbGzDFU3PzH0H8nlfNs0NLVJGPu+bW3f8vYnKYBDV8e6a9EVrbDyjKqc06YyqryU9jL94Qayu5IPJm/hEcAkKZTaR8/4TgcSrrSY0L2+/gtl8QlwcOKNqFrZA1kiiqCdqpnrUQleCVe8cm2ieY/o4AEEuN8H1m6hc1VWlZK51fGsGkVERURFR5q8syLavQj7v0RmsVkMv23ONJLdeHG6p00fdrCUJm1V8FERQiWMVL6oiUNFhrIaqMEcRGWtUpCBx/Nci7pUi7ipVzULkCpH4VeLiz0NxmG3GjPlCREZd7Ng2rmw+Nuf3q26eSa7aBIzSCfIgcqr6w9Te3ZRtfzHb6A0SD7qqYBAkHWIbWeKIUyAIcRqRLZtdqr+YUR8LAX9yxpVrZqWM/LBFuqJjDduGd0hcE4xGgFKQcogMEzGlKkAyvsN9Nk6trwyP6ldZlIerZ/FWlSyG5kxHAHEtucOKK3k29qVN2XUvQleXjPKjyLcESxbRreGAkiobVhUApQebqvSr6lNBvcoYMhHXBgUKfSCba15xw/JJrd+RY5ECExERW04P2zC+6sfYSwwVJVDGgL42ryU3E13hP3ZItOkSIGeI3CKFQHxCyKXOErmcQVeXX7iivY3JXp0gd1Rrk7HNGBH3gKq+v6+w6d9rvOL3ANy2ZPkrbxGU/pTYvj2wt6JVnaCIjPiSKOhPm1e2f6mYzx+uJNsmo8uTzZhgGowlWANMxkQNEB/3Vsh9fwiQA6lWWSNCxrKKHPPefUlJvskku1jUi5Ozlfl6AOuJzTQVX+29WMV7tpkFmUG6HsDXErXMI5/XeS25mdD4VlWvgJqah4qqgJnZRDaYjf0RVTpGpI0Az+MosmVi7GcawagKYmJjrYpPaRcmYhbvANSY6zFuGA6PwE0HSDU28WOR2tIEKTErvFsP4L9HSwddvmlX+7VkbKv6uDR6basSGVKoeO++BOjXifURVddPkpnjXbyKmN5BNnO5+pLU4GWUrCVxg28G8PbJpxsM6zAEBSpE3FMq/kDy/Zls7BmJ1Sbhq6r0hciod46jhhfYaYOdQNd7kcsZO9zZAnMVWBjmMEG6ER5/LPRWsqxaS+dJwMD7+It9eHw9CoW47FGV3i/fomWXzwMH6Ime24oA3tHcesN/gelLRNyg1UGBIOpNlDlD4sE3AvjoCTjMCHHE6t0mCL6g7H5CNE0VfomPB64R+HsAYOHydWcTc0c4aE0wTZZNXQoykYX4HQq8qq+w8ZERz9gJ4DvNK274kqreSWSaEzGdqzhzKSBrAHwN8+eXuZrMNPcWsg1nBZK0hi6r6slGRr0/quI+p8AdxPgRG3v8mf5Sw4yMP0ccXq7AW43NLJl0LMokFm6yiZ4WV/qYEv4ToOPw8Rwl8zIQ3kVkGquaPWvo68SGROKvQ7ibCLs9ibD3WQW/m210gbq4OigQjHpPBPzGvJbczIP5/LHyYZJsTAJuMlEj+XggA1WoSmqBUgq220OklCsW7rhnxN2fBPATAF9vznZ8lk30FqnWD1JOQOxaZLPRpNatBpIxSOguD8gX1Edb9+1oOQR06eLLc3M09pcq/OtA9DoiZvW+xpiQEVcSAr9zwaVrP70/n/9pssA6CehSjkqLIDxbRaAwpWHDmc/7s1788jlxP1aLOKoaBVeWDOJv9RU2/W4CBGHDjnz5/DBTGiG73hYLG76xcHnHUWPMnQh1AkbrS2FQFcAbkMt9bFIOJ6pCNmLx8c19he6/GvHfHwH4j7LMa+WYiL4L4q8koBXAC9ITKpxS7uAgnr3uycK/9iG7PsLSI1KOI0jI2uLdd2xftGLtu8CZ2+G8jMI5UlYVgtLyCoKHzjtvdcOzqu9g8ampq7Y05l0PS/zmPdvv3Dniiv6ngR0Adiy+PPcZieNPsM38zvigoMkmmXRORSViheIwef31vTu6Hxrx/+8sXNH+bQZ/G6CGdL+PCS5sWVTe2rd104YR/3xwTjb39Wni7yQTXaW+KiiQqhcydoFtlOUA7i07mAUXY1LVj8WD/Q8R5HIAlxLxQjLh0FQonHM37t+26R605DK4CB75fALknYTsXQaFQlxcam9qftT9OhmzVGUkh0Ks4kHAuYv8wnP2AmVyXFU91QOwbEihh+H0DcXtG+8ceUXiCPVdAN9tyrZ/HjBfJmPPqSE9ERSeo6gBpDcBeF8AhLZ7GD0Q9XwuG0tBxUP/SGLLHY9exNbOSdQFU8Wex+LdUSP+LWFyc4yeqtGLQzbodAMUNsRoyWX2bc/f3dy69l1sGz5dfdESq3glNi1Nu9ylfcC2EKZ9oG7OIJFg7uordP9VOcoy5VDSYJnEDz0xvX4SwCeRXR8tNEfOJ3FZBVYy26tEfP7JbQkYFDbEKIwEvRxaWnKZY+rudy52weapI05EoiDt6aymXf0NfcHBS589vbGNOVpaY4GnwGbEu57pTx//jZ077x5ENhuh8ApfEdwSAL/tHt7Tkz8M4HXN2Y4Btpm3nFJJQVXIREZ86T3FHd0PYfXqBtw9ywGJdPjMM3bf3d09TcvXftRkGm+pbSauBL3SV/sK3RuQXR9h5o+0LG229NojhfzTM5eveaU3+CGYT088n0Y4W5EQGyYZXAng3gqRXQGgb9vmewHcCwDnrXrNaf3ueItXXUFs2tTFx/Zv7/7PcMDlS+itvHGXogBBSy6DfL6k2Y4Ck1mqKiMKXqRAaYwnOb283vLBmDC+hMSq0GfFlVbv23HXgxWOWzKKiN61i/sK3fctuOT6XzOZzH8Tm4VVpVMCq3eA6isXXPKyD9oR/7yAmCHOISIcK3+fDJwqXc1UQ10ISGPFDX7xie1bisnAubHNNZ08LO9Bb76EtjZb7Nn8D83ZjrVkopeqxKVRrLrCk7WW3OA1ALahbQK6GIGS8Iy/BEBDgSE9lZLL8F+UA0g2xPuAXoTPl8vvgM2UxCkMBcCUQabL9/bCL8p2vIhMZBOm2NTwPLIDxtkKyWkNMat6qqJmQImZ1PvDJeirijvvHkyksRjDUClZsD2Q1MRcBG5q2hVfxsZePLbePWk0EDLGiIt/2kTzv1ZEJ+PurlJ53vMA0KnAZWykd4N3pfcS0bTRQDlEgok4IUMfBToZS3sF+Z6KdYMSstnoicKWYlO2/XPGNvxRTYAJtPevVu/3UJDVzge6jiYc1/cAfKo8RZVRuZWRlj09Pl2/OIZlKh41pToADI4mCrBsI6Px4B/t23HXg2jJZdBTwzEwSJge2fXR/sKGxxYuW/tmE2W+CfFaha5hVVEicxZlZlw9csAuSP7GAn+0zL6iRYEegLFcVSiIkyPF3oA0BPO18karIRksXJY7k637InPveSrrPrR368Yvl501wu8IxH9CRNvAUUbFoWyWHHIehwIry7xEXQSNCrFl9e6xIs1/EIDWoXJohbpD6WlbXgS5XsKBtqFow2H368GS5WuaPdtXKeHPSL3W2nwh9gB2+rFZ9nCqRildqeKp6sJSeLKRVTf48ScL3X2JThqP/SpdggNBhaPlHX9OhjbrkC38JOIBhXGW0r8VChviAFRwo/oC0J6HsLepteNhMmZVIgmZanMm3v+keK79AR7oUuSr9HnpUkGhQAbIq3d/VOVkBqCkEIBw9hBg9wzvUw/S74bAPV3LQ5vfBXP98LXdlF33InoWncR8fm2HrZBFWBSZiQGsNeJLjxTPy3wO5+UM8vl43J8lY7+vZ/O3mlrb72EbXVNVulcVGDbs9VpbOTCkeAFEvQLHIjVHhw1UNhuR6tJAWo6CPSFiFvH7QO7hZGOMnrSEKGPj3mbstOvEDUJFPjWvJbfpYFfXsZSrAEDFrXdsX5htf48h81sKLDM2M61s7vWONcgpL0gQUcqk5XgLlZiV6CEUNsSTCHpRoAuYnxuKNa/4/eLLc3PF40IV30KEi6C41JNmme3pIi6RYsdsJrbOAsCCSzrmEXBeUlSpSrAArLh40Dv9CgAKakJh/DdI9OXZg/bupyjeTcacPVrXLROdUMWkIwUJ2DbmBWnuDegjRLSqhuSpRAyC/7/EVFd9zpIovuNm4JFG3/gkkTlzFFkZAilAivkVoFR7rvMtirYDVC1CcNGqjsWqfCFUXgjFJQBdRkSXghnqYx3P/4JpAslrE1VHvbsN+bxP1NyJ5ekg/QoRX1N1jJNxgcpKm5ocW1pymSPkzoe1hkqlaDCeebTyNwvis+bAYl6imtFI5hOGAfG7+gp3HU8kiNEPTpCWgN2qArIZSDywex5QOjg6YQbtK3R/DMDHFqzKnUviX0LQq1V1JYhemPiFzMtm10eFwoYYxy6kugq6EIEUu4Yhfr0tXYxp5N3K9jNIzSqFtkH1ColdCzGfycYmtIBAxacZpng8Jp0InDHeAgBHWAyiWVV14UCwkYh7ZP9Dm386ZDauE9RyOdObz5eas+33EZmza+i6aadkMiJCUFfliWqWqioL8kBty2MCTISnxpkzBYDDD9x9tLm1fR+YzkxiJKiKxe60lpZcJonFqWa2TrxDu3yQGIBFl607Xx1dCdIXq2KFej2fmGYQZ5DG5Kl4TUjj8cvf8AS4G1JOrFv31TWeww6AawToURb7oPhYq6fEI1IVKNG5NrUwPDW9tICU+8XFPVB8d//3v3K88ieW6XQlmVEdl0hDekXsDxvntxl5+Bq6De0tbPrnptb2RrbRBQ76mWRiKl05hwhHAPvz+ccAPNaUfcVtRA2fIegLk8lt3OOOZwDEWdR1PgZxBjg08cOukwLfkTPNK/x1SQjur4F5HjMjjTZUEdXUQJ4GHNVP3JFKQjarzCPOQDWusqiDpEOgnZWkb91vM7Sp/m/i7sD1nUeAQhTP1Hm5G39g6nKiokR6KtXwJE6/bNw/e7ABQGks0F9w2dpz2EW/TaQd6qSVjc2kEnbwxXMSvDGR8gV1z7VKIkGkc1FbEtNApMcCT08MqfH1tkAuD7IczKgeB/GMKodMIiHoHJueLLOPZ/Yfsg2X7v/+V56tdltntcHoqGi6kYLQ8frEbqBvW/eG0fu0uhgIAM3ZdTcRURexmSe+JCdCjhPRYP1Xp37vXdq8Yt2NBPkTsFlGICg5qI8lkH4V0Y5lMotGkKhjSwiqYG+nm0QGmJEsb635K9XxTs2xgVFw6FS6Kho+WWQlQaGu3rWlgKEaErWGcbYznvH2UA0wWLh83dlscDM8vZqtmRXAXoKkNyzakXhIsqIhynIsdSGZT8MjT+qx9EmCqpa4kY5PdgRPgz0+gPg4ATO09r6wZT0mOaVLtVKKRd4NCBsPkCn7Dox+1/qZ02HmvpoRfhomh/6B2Vw3JH6Xk7b0L46ml/YDKNQtHwAi0ljnpQx0ycJlq+exnfGPzKZDVaAu9poSnAEEePjmVx0qYZckfklUiAmwygPjQYjSiVVVIj6VhVwJXqku4kyrlParpTqcBMYTIOI4M+JEKbuJt78RoI+ysXPFxUke0QQAyqdQefNLeZ5JGWBOIhNxCtIqkopMWpx7+tigNMwwiQ9MLb5f49FJVkexp0HkiL09agjHwTRrNJgpJWHXZ9Qt0pSZ+55aoh8WX56b60vxfWwaFg9L8KrqwQxADhZSc9/MmVr/Uq0LuBiAzr/s+gXso/9kY0MNipCEw1QTAqEkIFhim2ZESU6WuB9KR0G0YPyFkrp/8EGEKLcabLkC0EXV2fJ61SAswfOzKbHVkWDQtHxtF5uGW9THkHjQDRUeovHnOagQx9W7XQqcR8SNJwkUKHBG3EBO5wJ4YsIACMK0xobTPOLTa+XbDeZ4HagW8Ve1LY7mHQHwZDicRyBCmaXUpdns+ig1KU16CBKLgZTkpSZqWCzxYCkRw6nMWRABpD+pvH4CKsP4R3VnJ4BOss58nU3UIi7pQ43oN2LLHGUsQBCRH6uP897Hf6oq1xPrhTDyGmLGmEE4CC7mAGDVFlXleBJNN3K8OYAFLmrKvmL6hMc7OGEpoCuC1KKngEhQMPwvYEr9QG9EpcSM3daWBpC9MnWQCiRrZfrAstTmiUx5nlX8I+LdV8XF7xFx14LkhcVt3RcD9Eg9cz2BofTMFsL4VQBDZu+6iPDfZgAU29L5bGxjkhaMqtI+wGFbH8R0cqHQFTdl2x8j5nPh/Ai9NvEeJD5rDx+6AEBvSlZOagACi6pQ/0ZVVlQrUUwEBf3vpMZXx4klb2uz6Opyzdn217NteEkS8pypKX8Gb8EfiuiXWejbxdOe7B3pqr1o+Q1z1FQ1IQ4XS+KMAMCe2Qf2Nz0z9wlmvlDVjSAWiVS8sImaROhFAP6jfmKxk4EuLFrVsVg8Lldf2zfiZEi5v4BwAJD6YzMSQOjp8WdfunZ2rPr3wUlLuVbCl8RF/DH18RfJ6Oa9Z9sfVE1DRng6Sd+nOJlQS7IGwFcnZGUI/JIy+LqQFMePtiiFwDhD4nfWp4Mmrs0AthHxS8byVEQ8+FsAutB2j0lNNhNq5fRVay4DmZepd6Oz5BCMuFjU+O+UT7wJoCaNVwO9p8cjlzO6K/7DJG6Cq6vwBICOe+/e19dvNmBkduMDBwjTphnMmuX8Y/EiQ1GIqqyHEe3pcci27yDiCzSIqKMlEyIQ8EcA/h27djFQh89AS69FL0ri5N0mapw2psvwc1VfALnMoKRh5lqy9FpjG+aPEUAmSXTmRwYb3F+Vk5U+UDHPFUF7+mipKQmMpQmsSZ9IL6NBhGDEx0owaxYvv/68Pfn8zjp9aBg918jcVdNOI4/XqXe1K3GFZ/5PfZsoQSQGfzfxVKwWTcbJ5n3b3FWrTwtiaedETx5OTzGF+RSIeZQ3TxDPoZAH9z2w5f9S4u/kLZdOBqCLd5VaiPjiYEGsmVlJVfyNfYWNn0JvPnjkhd9TEjTj0sQzJHhliJicyKlJ/1FzUREZDTH+1zYv7/hdFAoxWnKZMVQHQksug958qXnZ2ivJ2HeIK8l4pdooJfwmHar7CwUFqR+MmzHP+QpovyE4MVVRnVQ9m4hV/AeKhY1/duj+Lc9UneeEb1v0qFvJJjq/urPX2Mf/2NOgQsY0ijH/UObpxqyN0Rnqk6BLGt20j7KJFoSckNVdw9U78YS76zsZEq/DaWbafcf9swfBZh5Gh6ymcf0LG7x+Auh6Y3BZ7URdGzaXM2hpUXR1+aZsxz+wiVbUCG5SIiYVDenZg7fbyQOERBoS4RUcWRIXjz5BVX0SuPNA37bNd4WAokIS0VlB7iXuxIuzay8WMjeGkNjaG5AIfjDzbHmhGme/7TXuJ6LGqn7+RCzee1j+x0Ur1h3duzV/xzDppBLQ83mP3nxpUXbNZUp2Eykymmb9+SUT+09YZxD1mcdnKQA948o1s2hQW1SEqvJDzEZcfJQHolvDqQyEGJ2e4XdNRHMldFFqUhpzaCc4riFBkGebeVnzio7PFbd2vSW4cCfxFyMP8MSpatGKjj8F2/W1A9nUE0csPn5o/7aoUK+oqMjlzM78V482Z9s3sbHrJS75URslxFd7YzO/29za/tNiT/cHgZ4kceU1MqLE1ohSWMFpqXnFuk8y25vCRqQqG9FacYO9cwcz/7IPSGMITn5jLB5rQkNaOw6M79KlhEJh+DuFiMl4wSUd84XoX4ioQSVktxlz3jmQimhrs3t68nubWju+zcauqwpMAAHCUDYA3968Yt3HAf/xYj4/iokOXpW8XhV/TsA0FS+njjv45WnW6ZkKzKaq/J8qgUlJjlxxEZ4Oxrd8BTAncS1JeH9za/stbKJrx4wiJRAUEMjECddkf7HNvKl5xQ3nA7i5uLXr/mqqefPK9gug/AFi+yoZI6AOSiFITugfgbyvX3dMTImezSfh4zclOm21U8uIjz3bTNeiFeuWGtWbH+/Z1FeBqBUhp12amjgXtXZcrsx/zWyvFjfoq+hyCmIFCJ707b29+VJFJZpToGeOIUoTSMUrmFaeceGaWYfy+QqPvKF3asq2v5hBnwOZC2uGMI+UfsrmsGsA9IBY/k5V1lUNKCuzq6oKDzbRu8Xrm5qy6+4BdDuAQwQ9XUEXQ+gaMna+egfVU0kk/nK1KIaRECxRdWyDxcE03fdovAwVlcfKc90DWXDJy2aYaOaHydh3iT/FyWcSUCATXQ2V/27Odtyrih4CPSoMTyKLQXQlBC9lYxuDWlirP2lU6uBugvsyKlKo1dFCHrr9+fwPm1rb/9lEDb+b2Gqr3SNFstc7cdc1ZTu+yIqNpVn2Bwd7kopF2fXRfHpyiSG9AsI3Kun1RIwEDExV0jKTsVIa+MD+bZvvOQklusYTlA+idnJUVvFCxp7VONP+a1O2/QPGRT8sNQ448naeIW5RkXVEdCOIUR8YAAoVLiUZoXu6PHI5U8zn729qbb/DRJkbJI5rEYAEIDhtMZ9m2K4B0ZpK1Xl4TMUE/JVJ5Zdtk5OOxYsQlOB6L4JHL+BZnwL0WSI+vYqzYPABADJgvr0pu+7dQOk+hHwV06H2bCK+BqC3sjHnS0idZuo5bkjUnwgopGuK2F7FzFdBE99uQ6GClXd1VGknT2QiL/4P922/6/ioFGp1cAkKdLJK7/vExdcRmwU1Rc8EycA8z9jMe9W799pjcV9za3so5qoHzlRQs+GoQQ0Qcs3XYuBV2GasLw1+tm9bdxfa2uwpKxufEKhK+lDN0OOUiBGnxPYKBv+rWPesja2AMIvZAMZAfAzVCeQbUFIzUJIRUhmxpT8Q736NmGePKeoHpy0VV5JROupkqnbjxKIdf85MQT0SL/UV7jrUnG1/lIiXq7oqG5pY1SuROYeYN4lER6B6HEQziGl2KHzjMdFkM8QmzPOxY6nbo6eJgQIHBiD26kfyEfXE0GjMtjHy8cAX9m3v3pgesBMVGwW5Xtq3I38Q5F4LIgUxxsg0GxZocPZQJtNEJloZPuZcAjWIK3l1JZ+w9tWyAgXSw5Vu7du26aaEqPMnuFzMOAQqZWaevlW8eyKMaa1Tkki9ExUnIJoBplnpSS3pO5WZ5rpOWp+ZdrofIZXx3gc27YF3bwAzhcw6OjYjnXrYVX5GR0zKSXOc+WVtIeuxKuhOYkuomRuCSNWLSixENIfZLCKi2VCFuJJL5t9UzPO4hKFo4rRV9rDV8TMmVStVUG2uxy0qozHbhkh86b4ZRwduqlS9J65HJjHpxa1b/sM79zpi5qQOpKu9QMOCVBUNiBb7YJZJKvGM9QLhJBYyZm1z69rfQ6EQn2j6dR37xFbkcry750sDRPgImYgBuLGRmoJ5NDWRDnunEGhOZHhsjCIQqX+6YVBGjXdbmy1u37LFx/FNbCJDxGONN+pZWMQmpO1+HjYCxUk9EgFAftB9Rtzgk0Qmql0fZGieQ9mBdK5hE9Ave6yOTRyHdHkkdoKHGhHZKClVoJPNMq4hZXxj5F18fxT763fuvHtwKDfkZPPyJ4t03/bur0js2hU4zDaySRVMPwZC0tBmGT8/QIX4R1CcxVHjp5uz7a8vJ8o4VS0FvUL3Z70b+BeOGjOAxuOezMPeJ6nNQIZCclD/E4yTnUgBb4/1j76mp8cl4/1Z791rADpW53hjZH8AEGcajYr8n4j/OyJW1M7fX1do8i9xU+RyfOAHd+5XldeCSImNgaobcw0PT/6bjCsRR41GxW1Vlb2BAK+9cdnU7datSTXvonj3DTYZJjIU+livhDe0FjnKWPGlrwOll+1+aPNTiT9F+T6TPyGSRdq3o3uzUb9KRTaTiTjJSExQuIoCGooTi/QgFe/FxwLwrUuWr2lO0J1PISgI0MnNmP87Eg9+mW1DRGw5JD2AG6reU1E1J/1fIhFwlLEgPKnq3kSiNxFbGhqTit8g3I9ApcY5JV9zvHM501fY+DUXly4XlW+Xx7tcnCMZ82GfcOKVYy2IB9SVPjtg+i9nxbfAVqAal4ufpB8K/SOiWidmqnLIsPep+I6oXlt7ogZRlfuEOGahiawfQkU/ymuv/FFUSAEJ+Pdt2/yvIq5DgSMcNdhha7g81+kcV84zM0cZS0TPqo8/HM08chUUTyUFcnQ43oe1EijeeoE2daZS11fYdKP6+PUKFDlqsEQmFIZJ+5j2c1Qfw1pUoOhd6S3FrRtfHRIZjS5pd2IbKlmkTxS6H9279fZ28X61en8nQANsMzZUMiqLUDRs81RuoDJ4jHGCEhmICNtolmd+O4JT0lj956FDu3x4p/UBua7TA11aKGyIi4VNrxPn3gDVR9hGhqOMJRMZ4lAZiSiI32Qz4X9sWaE71bkuKg0sK27t/icQTSNmIiKbVtkhjphMZMiYiKOMUcWs3QcPyniSy/6H7vxh8cHbr1P1L/Pe3QbFgXTDj/rYjEk0l0fEl/5GVZfv3brxpsMP3H3UqzYzG0NsM6EfFR8yGeKIoVojVFymh3cwFe+TfowljljqTBOmkIjYcnjmsPswgSJiwxMKrVfMGOoHU5gjJhAH8BzpHJyCQqF7s4OuEOe+DFB/GL8omeukTyYyXJ7niAHsVu/+Dk6X7916x/t39/QMElFSwCMRKEJp9tAPtobYMPuJkbWqMAsuee2MvYVN/yzu2WXi404FHiUTcTrP5X6O6KNCd4q4W8Q9u6yvsOlzZS/LKg6DJ+qOmmzy1EU5PGBJtv0FAvtSJX81FBcrsJiA09NQ0REiabnSmYofp7KQCrElFfej4tLoV0fkuiMAevala2drQ6Z5UBxXsxYacGTc4IEntm8por6qT5RWZT7vvNUNx2dPvxaga6F6KaDNCp0OJUegp0HYTYRtYHOPnTb9/t09XxpIyCtz9o9Ls3zUcL5KbITUKsEwOBJIxGHRN4h3pb5C95bx+9TJwAfKBULPevGr58hAfInAXQTFEoXOSnzjn1Q1u1j14b2VAVchO7M/K9ux0BMvE1FRHXLbJSJlaKwmQyrx3qQAzbCxamptzxrDM5xzwAhLqCG1apjswMC2xx/+5pExxpkAaPOKtUsM23OcC3VIhsRqcvBelTNsUdr3RKH70XrmbHG2fRU40+ilJORViFk8w5OokIk8dLC/uHXLj6qQjGVT9pJs+ws887UQvQKEpVDMTnb3URD2AHgYRP/tB6d9r5xUKCHnmrK5JcRxozgYNWQMiRVnLcNHosiQQYObGd0fTPA5A+R98/L2/6Ioump0EtRwwov4PSYTXbBnCUppHxdfnpvmY7yYSdpE9WIiLFTVRgL6ASoS6GEY7rHTDty/u6dnYOQ7Ts48M5HW2cnoHZ1cpXll+xkAzhBnTiP2jVAlJhhPNI2E5oJ0CYEuBuhqNnax+LhWJR8N8qWWVPiCfds37p58FegJM9JVS9AvOLKkoXGO8eXNP+L/5WzMp6pP6QlXTxvyGH1+WxfGA9sqCYLGXxstOrlxDeu3ubXjHrK2bVxA+F6+H0CIU5hI5ac61yKdskFtu4eHah7U1864cs2shpL9MyJ+X+001lAE/ay1uPWO7VUAITnRa3UNQFfXZDmNodTcIX5CRi2McuTbqEy9NKZ1ZOh3/oT6VVW1G+U2Xl+fANRe6MnGGZeHqWucT6AfY2zqqvdI23j3GraGh0uilenZq75jlaC+kf0p/25SgDBU8ax6X+ro44kAQppRprX9XWwzb1UfO4x07U1rzrG8eu8Dlzw8AmWHxy2M3AiVnASA5mzHD4lNS21QIDD8JXsKmx/+mUkI44/fcysIaKr97CSSyQPCSW/1eSpWZIZlY39FxI/2flUFRw3wg8++Geh6J36Yy2AoPn9Y3MIYyGOAvFfoUaoeG66Jf3k/vDucIP3P12w11abac6jVZ2XoSTK0MN3v4wFR8V4leOiVP+q9L/U7sF3fvHztryMNPhqKHR+LtOMQy5/3iy7uWJzkIajiuahKzABhz57Zx/ZPbcqpNtV+HhICktBkzHu4qAd2sbEvUHHV0k0rQS2M3dzcuu4dxXz+iwmiDNexgaGy8EmKc/SidNbFL5/jM/RFIjMjiWsYkeqJJNh36f7UD2KSpeCn2lT7hWpK6umXBxAAtLWZQs+GuCnb/nli85fqna+S1otURUE8g635QnN23RvB+Cdx+O6+7Rt3VyXMsuujJjz5AiZd7ZTfScy1qx2HbMME4KtlUJlqU+05gQj4hbD81A8ISU3AAUSfaXSldzKbplC1ZlRNQAoRd7GSia4ioquU4v7m1vZdAD0O0sNJBN10EJ0BHFxCinPIRBbiMUbpc082MuLiB/u2Xfod4JLhlaOn2lSbaj9DQEiyJh3J559uXr7mJoqizeokLZoyOi0kEakPBU2IeBqxuQjEFw2n5bUiVj8OBTGopqlRk0Kd70pzM4xPUk61qTbVJtIm5rqcBv1s37JFfOnPOWqwoSbdGOHPRAZBZBB1JS8udulHXeyDaTFUM65ZPlvh2WasevfHxe3d/3Oqk6NMtak2BQgTAYW2NlssdH9I3OAtbKM0yGKcCLEkYcOouO0xoh4VDmDiKGO9G/iL4rbujybJUabAYKpNtV8IQAh8ggvhwZv+QlzpRgX2DYsQO7HEG2mYrrKNLIie8S5+c1+h+xbkcmbKqjDVnlMtcdaj4ZmpKqMzfwkAoVJ92Nb9jUEfZ9W7z6QRYuXEG5UhmdVfrhwSOhSmm4aTMqm4b4D8ir7Cxs9PqQlT7TndCJqkWUgrSyefciHhn4lV8sQq9iSgcCifLwL4vcXLr/+Yd/RaIu0AcBHZyKQFurVaohcKycxBHKhJ8VDVR9W7b6n4L/WlWW6nwGCqPdfxQMlBxQHwUDUVQCFQZQLczwaXTtZ9KmsL5nJm4WOulZWuUugqBl2okGYFnU5AQ/KbWIFnCNivwE4iKhCbe91Aw/+Ww0k7Ozl4Jk9F502153ZbuHzd2dbYWTF5hQ4v+x4B8Equr3Dxj0/1Xvj/v82DP8R2B00AAAAASUVORK5CYII="/><span class="plan">Admin</span></div>
+      <div class="top-r"><span class="who" id="who">&nbsp;</span><div class="avatar" id="avatar">A</div></div>
+    </div></header>
+
+    <div class="wrap">
+      <div class="banner err" id="authbanner" hidden>
+        <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <div><b>You're not signed in as an admin.</b> Sign in and reload this page.</div>
+      </div>
+
+      <!-- ===== Global events ===== -->
+      <section id="tab-events">
+        <h1>Global events</h1>
+        <div class="lede">Calendar events shown to every student. Upload a CSV to add or update them in bulk.</div>
+
+        <div id="result"></div>
+
+        <div class="cols">
+          <div class="card">
+            <div class="hd"><h2>Upload CSV</h2></div>
+            <div class="bd">
+              <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+                <svg class="ico" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+                <b>Drop a CSV here or click to choose</b>
+                <span>.csv files only</span>
+              </div>
+              <input type="file" id="file" accept=".csv,text/csv" hidden/>
+              <div class="filerow">
+                <span class="filename" id="filename">No file selected</span>
+                <span class="spacer"></span>
+                <button class="btn" id="uploadbtn" disabled onclick="uploadCsv()">Upload</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="hd"><h2>CSV format</h2>
+              <div class="right"><button class="btn ghost" onclick="downloadTemplate()">Download template</button></div></div>
+            <div class="bd help">
+              <p style="margin:0 0 8px"><b>Required:</b> <code>title</code>, <code>event_date</code> (YYYY-MM-DD only).</p>
+              <p style="margin:0 0 8px"><b>Optional:</b> <code>sub_info</code> (free text), <code>applicable_grades</code> (comma-separated, e.g. <code>"11,12"</code>; blank = every grade).</p>
+              <p style="margin:0">Re-uploading the same <code>title</code> + <code>event_date</code> updates that event instead of creating a duplicate. A bad row is skipped and reported; it doesn't stop the rest.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>All events</h2><span class="sub" id="evcount"></span>
+            <div class="right">
+              <button class="btn" onclick="openQuickAdd()">+ Quick add</button>
+              <select class="sel" id="evfilter" onchange="renderEvents()">
+                <option value="upcoming">Upcoming</option><option value="all">All</option><option value="past">Past</option>
+              </select>
+              <input class="search" id="evsearch" placeholder="Search events" oninput="renderEvents()"/>
+            </div>
+          </div>
+          <div class="tscroll"><table>
+            <thead><tr><th>Date</th><th>Event</th><th>Grades</th><th>Added by</th><th>Updated</th><th class="act"></th></tr></thead>
+            <tbody id="evbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== Import history ===== -->
+      <section id="tab-history" hidden>
+        <h1>Import history</h1>
+        <div class="lede">Every CSV upload, with how many rows landed and any that were skipped.</div>
+        <div class="card">
+          <div class="tscroll"><table>
+            <thead><tr><th>When</th><th>Admin</th><th>Status</th><th>Rows</th><th>Added / updated</th><th>Skipped</th></tr></thead>
+            <tbody id="histbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="ovl" id="delovl" onclick="if(event.target===this)closeDelete()">
+  <div class="modal" style="max-width:420px">
+    <div class="mhd"><h3>Remove this event?</h3><button class="x" onclick="closeDelete()">&times;</button></div>
+    <div class="mbd">
+      <div id="deltext" style="font-size:14px"></div>
+      <div class="help" style="margin-top:6px">Students will no longer see it on their calendars. This can't be undone.</div>
+      <div class="mfoot">
+        <button class="btn danger" id="delconfirm" onclick="confirmDelete()">Remove</button>
+        <button class="btn ghost" onclick="closeDelete()">Cancel</button>
+      </div>
+      <div class="tip">Tip: hold <kbd>Shift</kbd> and click the red &#10005; to remove without this popup.</div>
+    </div>
+  </div>
+</div>
+<div class="ovl" id="qaovl" onclick="if(event.target===this)closeQuickAdd()">
+  <div class="modal">
+    <div class="mhd"><h3>Quick add event</h3><button class="x" onclick="closeQuickAdd()">&times;</button></div>
+    <div class="mbd">
+      <div class="f"><label for="qa-title">Title</label><input type="text" id="qa-title" maxlength="200" placeholder="e.g. UC Application Deadline"/></div>
+      <div class="f"><label for="qa-date">Date</label><input type="date" id="qa-date"/></div>
+      <div class="f"><label for="qa-info">Details <span style="text-transform:none;font-weight:600">(optional)</span></label><textarea id="qa-info" placeholder="Shown when a student opens the event"></textarea></div>
+      <div class="f"><label>Who sees it</label>
+        <div class="gchips" id="qa-grades">
+          <button type="button" class="gchip on" data-g="all">All grades</button>
+          <button type="button" class="gchip" data-g="9">Grade 9</button>
+          <button type="button" class="gchip" data-g="10">Grade 10</button>
+          <button type="button" class="gchip" data-g="11">Grade 11</button>
+          <button type="button" class="gchip" data-g="12">Grade 12</button>
+        </div>
+      </div>
+      <div class="mfoot">
+        <button class="btn" id="qa-save" onclick="submitQuickAdd()">Add event</button>
+        <button class="btn ghost" onclick="closeQuickAdd()">Cancel</button>
+        <span class="formerr" id="qa-err"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ===================================================================
+   Auth seam. This page is dropped into a project where the admin is already
+   signed in via OAuth. The host sets this (before this script runs, or any
+   time before the first request) to tell the page where the API is and how to
+   get the admin's current access token:
+
+     window.GRADMAP_ADMIN = {
+       apiBase: 'https://api.example.com',      // where gradmap-ai is served
+       getToken: () => myAuth.getAccessToken(), // may return a Promise
+     };
+
+   The token is sent as `Authorization: Bearer <token>` and verified by the
+   API (admin_auth.py), which is what actually decides who is an admin. With
+   no config the page targets the local dev server, which runs with
+   ADMIN_DEV_NO_AUTH=1 and needs no token. Nothing else here touches credentials.
+   =================================================================== */
+const ADMIN_CONFIG = window.GRADMAP_ADMIN || {};
+const API_BASE = ADMIN_CONFIG.apiBase || 'http://127.0.0.1:8000';
+async function adminAuthHeaders(){
+  const token = ADMIN_CONFIG.getToken ? await ADMIN_CONFIG.getToken() : null;
+  return token ? {Authorization: 'Bearer ' + token} : {};
+}
+
+async function adminFetch(path, opts){
+  opts = opts || {};
+  const res = await fetch(API_BASE + path, {...opts, headers:{...(await adminAuthHeaders()), ...(opts.headers || {})}});
+  if (res.status === 401 || res.status === 403){
+    document.getElementById('authbanner').hidden = false;
+    throw new Error('not-admin');
+  }
+  if (!res.ok){
+    let detail = '';
+    try { detail = (await res.json()).detail; } catch (e) {}
+    throw new Error(detail || (res.status + ' ' + res.statusText));
+  }
+  return res.json();
+}
+
+const $ = id => document.getElementById(id);
+const ESC = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, c => ESC[c]); }
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
+function fmtDate(iso){ return new Date(iso + 'T00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); }
+function fmtStamp(iso){ return iso ? new Date(iso).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—'; }
+function errWhere(er){ return typeof er.row === 'object' ? esc(er.row.title || 'row') : 'Row ' + esc(er.row); }
+
+function showTab(name){
+  ['events','history'].forEach(t => { $('tab-' + t).hidden = t !== name; });
+  document.querySelectorAll('.side .nav').forEach(n => n.classList.toggle('active', n.dataset.tab === name));
+  if (name === 'history') loadHistory();
+}
+
+/* ---------- who am I ---------- */
+async function loadMe(){
+  try {
+    const me = await adminFetch('/admin/me');
+    $('who').textContent = me.admin_name;
+    $('avatar').textContent = me.admin_name.split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+  } catch (e) {
+    if (e.message !== 'not-admin') $('who').textContent = 'API unreachable';
+  }
+}
+
+/* ---------- events table ---------- */
+let EVENTS = [];
+async function loadEvents(){
+  try { EVENTS = (await adminFetch('/admin/events')).events; }
+  catch (e) {
+    $('evbody').innerHTML = '<tr><td colspan="6" class="empty">' + (e.message === 'not-admin' ? 'Not authorized.' : 'Could not load events.') + '</td></tr>';
+    return;
+  }
+  renderEvents();
+}
+function renderEvents(){
+  const d = new Date();
+  const today = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const mode = $('evfilter').value;
+  const q = $('evsearch').value.trim().toLowerCase();
+  const rows = EVENTS.filter(e => {
+    if (mode === 'upcoming' && e.event_date < today) return false;
+    if (mode === 'past' && e.event_date >= today) return false;
+    return !q || (e.title + ' ' + (e.sub_info || '')).toLowerCase().includes(q);
+  });
+  $('evcount').textContent = rows.length + ' of ' + EVENTS.length;
+  $('evbody').innerHTML = rows.length ? rows.map(e =>
+    '<tr><td class="date">' + fmtDate(e.event_date) + (e.event_date < today ? ' <span class="pill past">Past</span>' : '') + '</td>' +
+    '<td><b>' + esc(e.title) + '</b>' + (e.sub_info ? '<div class="sub">' + esc(e.sub_info) + '</div>' : '') + '</td>' +
+    '<td>' + (e.applicable_grades && e.applicable_grades.length
+        ? e.applicable_grades.map(g => '<span class="chip">Grade ' + g + '</span>').join('') : '<span class="chip">All grades</span>') + '</td>' +
+    '<td>' + esc(e.created_by_admin_name || '—') + '</td>' +
+    '<td>' + fmtStamp(e.updated_at) + '</td>' +
+    '<td class="act"><button class="xbtn" title="Remove event (Shift+click to skip confirmation)" aria-label="Remove ' + esc(e.title) + '" onclick="removeEvent(' + e.id + ', event)">' +
+      '<svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></td></tr>'
+  ).join('') : '<tr><td colspan="6" class="empty">No events match.</td></tr>';
+}
+
+/* ---------- remove ---------- */
+let pendingDelete = null;
+function removeEvent(id, ev){
+  const e = EVENTS.find(x => x.id === id); if (!e) return;
+  if (ev.shiftKey){ doDelete(e); return; }          // Shift+click skips the confirmation
+  pendingDelete = e;
+  $('deltext').innerHTML = '<b>' + esc(e.title) + '</b> &middot; ' + fmtDate(e.event_date);
+  $('delovl').classList.add('open');
+  $('delconfirm').focus();
+}
+function closeDelete(){ $('delovl').classList.remove('open'); pendingDelete = null; }
+async function confirmDelete(){
+  const e = pendingDelete; closeDelete();
+  if (e) await doDelete(e);
+}
+async function doDelete(e){
+  try { await adminFetch('/admin/events/' + e.id, {method:'DELETE'}); }
+  catch (err) { if (err.message !== 'not-admin') toast('Could not remove: ' + err.message); return; }
+  EVENTS = EVENTS.filter(x => x.id !== e.id);
+  renderEvents();
+  toast('Removed "' + e.title + '"');
+}
+
+/* ---------- quick add ---------- */
+function openQuickAdd(){
+  $('qa-title').value = ''; $('qa-info').value = ''; $('qa-err').textContent = '';
+  const d = new Date();
+  $('qa-date').value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  document.querySelectorAll('#qa-grades .gchip').forEach(c => c.classList.toggle('on', c.dataset.g === 'all'));
+  $('qaovl').classList.add('open');
+  setTimeout(() => $('qa-title').focus(), 50);
+}
+function closeQuickAdd(){ $('qaovl').classList.remove('open'); }
+$('qa-grades').addEventListener('click', ev => {
+  const chip = ev.target.closest('.gchip'); if (!chip) return;
+  const chips = [...document.querySelectorAll('#qa-grades .gchip')];
+  if (chip.dataset.g === 'all'){ chips.forEach(c => c.classList.toggle('on', c === chip)); return; }
+  chip.classList.toggle('on');
+  chips[0].classList.remove('on');
+  if (!chips.some(c => c.classList.contains('on'))) chips[0].classList.add('on');   // nothing picked = all grades
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape'){ closeQuickAdd(); closeDelete(); }
+  if (ev.key === 'Enter' && $('qaovl').classList.contains('open') && ev.target.tagName !== 'TEXTAREA') submitQuickAdd();
+});
+async function submitQuickAdd(){
+  const err = $('qa-err');
+  const title = $('qa-title').value.trim(), event_date = $('qa-date').value;
+  if (!title){ err.textContent = 'Enter a title.'; return; }
+  if (!event_date){ err.textContent = 'Pick a date.'; return; }
+  const picked = [...document.querySelectorAll('#qa-grades .gchip.on')].map(c => c.dataset.g).filter(g => g !== 'all').map(Number);
+  const btn = $('qa-save'); btn.disabled = true; err.textContent = '';
+  try {
+    await adminFetch('/admin/events', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title, event_date, sub_info: $('qa-info').value, applicable_grades: picked.length ? picked : null})});
+  } catch (e) {
+    if (e.message !== 'not-admin') err.textContent = e.message;
+    btn.disabled = false; return;
+  }
+  btn.disabled = false;
+  closeQuickAdd();
+  toast('Added "' + title + '"');
+  await loadEvents();
+}
+
+/* ---------- upload ---------- */
+let chosenFile = null;
+function setFile(f){
+  chosenFile = f && /\.csv$/i.test(f.name) ? f : null;
+  if (f && !chosenFile) toast('Please choose a .csv file');
+  $('filename').textContent = chosenFile ? chosenFile.name : 'No file selected';
+  $('uploadbtn').disabled = !chosenFile;
+}
+$('file').addEventListener('change', e => setFile(e.target.files[0]));
+const drop = $('drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+
+async function uploadCsv(){
+  if (!chosenFile) return;
+  const btn = $('uploadbtn'); btn.disabled = true; btn.textContent = 'Uploading…';
+  const form = new FormData(); form.append('file', chosenFile);
+  try {
+    const r = await adminFetch('/admin/events/upload', {method:'POST', body: form});
+    showResult(r);
+    await loadEvents();
+  } catch (e) {
+    if (e.message !== 'not-admin') $('result').innerHTML = '<div class="banner err"><div><b>Upload failed.</b> ' + esc(e.message) + '</div></div>';
+  }
+  btn.textContent = 'Upload'; btn.disabled = !chosenFile;
+}
+function showResult(r){
+  const cls = r.failed ? (r.inserted ? 'warn' : 'err') : 'ok';
+  const errs = (r.errors || []).map(er => '<li>' + errWhere(er) + ': ' + esc(er.error) + '</li>').join('');
+  $('result').innerHTML = '<div class="banner ' + cls + '"><div><b>' + r.inserted + ' event' + (r.inserted === 1 ? '' : 's') + ' added or updated</b>' +
+    (r.failed ? ', <b>' + r.failed + ' skipped</b>' : '') + '.' +
+    (errs ? '<ul class="errlist">' + errs + '</ul>' : '') + '</div></div>';
+}
+function downloadTemplate(){
+  const csv = 'title,event_date,sub_info,applicable_grades\r\n' +
+    'FAFSA opens,2026-10-01,Submit as early as possible,"12"\r\n' +
+    'PSAT/NMSQT,2026-10-14,Register through your counselor,"10,11"\r\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'global_events_template.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---------- import history ---------- */
+async function loadHistory(){
+  let data;
+  try { data = await adminFetch('/admin/events/imports'); }
+  catch (e) { $('histbody').innerHTML = '<tr><td colspan="6" class="empty">Could not load history.</td></tr>'; return; }
+  const rows = data.imports;
+  $('histbody').innerHTML = rows.length ? rows.map(i => {
+    const errs = Array.isArray(i.error_details) ? i.error_details : [];
+    const status = i.status !== 'completed' ? '<span class="pill warn">In progress</span>'
+      : i.failure_count ? (i.success_count ? '<span class="pill warn">Partial</span>' : '<span class="pill bad">Failed</span>')
+      : '<span class="pill good">Completed</span>';
+    const skipped = errs.length
+      ? i.failure_count + '<details class="errs"><summary>View</summary><ul class="errlist">' +
+        errs.map(er => '<li>' + errWhere(er) + ': ' + esc(er.error) + '</li>').join('') + '</ul></details>'
+      : String(i.failure_count);
+    return '<tr><td class="date">' + fmtStamp(i.created_at) + '</td><td>' + esc(i.admin_name) + '</td><td>' + status + '</td>' +
+      '<td>' + i.total_count + '</td><td>' + i.success_count + '</td><td>' + skipped + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">No imports yet.</td></tr>';
+}
+
+loadMe();
+loadEvents();
+</script>
+</body>
+</html>
