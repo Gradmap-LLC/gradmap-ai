@@ -6,13 +6,14 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Literal
+from pathlib import Path
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
@@ -387,6 +388,28 @@ app.add_middleware(
     allow_headers=["*"],
     allow_private_network=True,
 )
+
+
+# --- Dashboard pages ---------------------------------------------------------
+# The student dashboard is one HTML file; each screen has its own URL and the
+# page picks the screen from the path, so refreshing or sharing /timeline works.
+# Keep these in sync with SCREEN_PATHS in the dashboard's script.
+_DASHBOARD_PATHS = ("/", "/plan", "/timeline", "/calendar", "/suggestions", "/majors")
+
+
+def _dashboard_file():
+    candidates = sorted(Path(__file__).parent.glob("GradMap_Dashboard_*.html"))
+    if not candidates:
+        raise HTTPException(status_code=404, detail="Dashboard file not found")
+    return candidates[-1]  # names embed the date, so the last sort is the newest
+
+
+def _serve_dashboard():
+    return FileResponse(_dashboard_file(), media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+for _path in _DASHBOARD_PATHS:
+    app.add_api_route(_path, _serve_dashboard, methods=["GET"], include_in_schema=False)
 
 
 @app.get("/students/{student_id}/college-list")

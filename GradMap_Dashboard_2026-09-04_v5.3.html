@@ -1500,7 +1500,8 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
    Suggestions section) every one of those early calls would throw
    "Cannot access 'API_BASE' before initialization" -- silently, since they
    all wrap the call in try/catch. That's exactly what was happening. */
-const API_BASE = 'http://127.0.0.1:8000';
+/* Served by the API itself (main.py's dashboard routes) -> same origin. Opened straight from disk -> the local dev server. */
+const API_BASE = location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8000';
 async function apiFetch(path, opts){
   const res = await fetch(API_BASE + path, {headers:{'Content-Type':'application/json'}, ...opts});
   if (!res.ok) throw new Error(`${(opts && opts.method) || 'GET'} ${path} failed: ${res.status}`);
@@ -2769,7 +2770,26 @@ function nlAdd(){
 drawAddForm();
 
 /* ---------- 8. Screens ---------- */
-function showScreen(k){
+/* Each screen has its own URL: /plan (also /), /timeline, /calendar,
+   /suggestions, /majors. When the page is served over http(s) these are real
+   paths (main.py serves the dashboard at each, so refresh and shared links
+   work); opened straight from disk (file://) pushState to a path isn't
+   allowed, so it falls back to #/timeline-style hashes. */
+const SCREEN_PATHS = {plan:'/plan', timeline:'/timeline', calendar:'/calendar', suggestions:'/suggestions', majors:'/majors'};
+const USE_PATHS = location.protocol.startsWith('http');
+let currentScreen = 'plan';
+function screenFromLocation(){
+  const raw = USE_PATHS ? location.pathname : location.hash.replace(/^#/, '');
+  const name = raw.replace(/^\/+|\/+$/g, '');
+  return SCREEN_PATHS[name] ? name : 'plan';
+}
+function syncLocation(k){
+  if (USE_PATHS){ if (location.pathname !== SCREEN_PATHS[k]) history.pushState({screen:k}, '', SCREEN_PATHS[k]); }
+  else if (location.hash !== '#' + SCREEN_PATHS[k]) location.hash = SCREEN_PATHS[k];
+}
+function showScreen(k, fromRoute){
+  if (!fromRoute) syncLocation(k);
+  currentScreen = k;
   document.querySelectorAll('.screen').forEach(x=>x.classList.toggle('on', x.id==='sc-'+k));
   document.querySelectorAll('.side .nav[data-sc]').forEach(n=>n.classList.toggle('active', n.dataset.sc===k));
   if(k==='timeline') renderTimeline();
@@ -2778,6 +2798,11 @@ function showScreen(k){
   if(k==='majors'){ renderTraits(); renderCareers(); renderMajors(); renderMacts(); }
   window.scrollTo({top:0,behavior:'instant'});
 }
+
+window.addEventListener(USE_PATHS ? 'popstate' : 'hashchange', () => {
+  const k = screenFromLocation();
+  if (k !== currentScreen) showScreen(k, true);   // a hash we set ourselves lands here too; skip the re-render
+});
 
 /* ---------- 9. Timeline ---------- */
 const HERE_GRADE = 11;
@@ -3696,6 +3721,8 @@ if (cachedStory) applyStoryResponse(cachedStory);
 bootDone = true;
 renderGrowth();
 loadStory();
+// Landed directly on /timeline, /calendar, etc. (refresh or a shared link)
+if (screenFromLocation() !== 'plan') showScreen(screenFromLocation(), true);
 
 function fold(id){ document.getElementById(id).classList.toggle('closed'); }
 let tt;
