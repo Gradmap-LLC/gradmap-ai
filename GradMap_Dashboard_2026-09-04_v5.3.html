@@ -1056,6 +1056,13 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
             <span id="stale-txt"></span>
             <button class="btn" onclick="toast('Opens: Courses &amp; Grades')">Update grades</button>
           </div>
+
+          <!-- term-end dates the student enters themselves (see loadTermDates) -->
+          <div class="stale" id="termdates-bar" style="display:none;color:var(--muted)">
+            <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+            <span id="termdates-txt"></span>
+            <button class="btn" id="termdates-btn" onclick="openTermDates()">Add term dates</button>
+          </div>
         </div>
       </div>
 
@@ -1406,6 +1413,23 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
     </div>
   </div>
 </div>
+<div class="ovl" id="tdovl" onclick="if(event.target===this)closeTermDates()">
+  <div class="modal" style="max-width:440px">
+    <div class="mhd">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+      <h3>When does each term end?</h3>
+      <button class="x" onclick="closeTermDates()">&times;</button>
+    </div>
+    <div class="mbd">
+      <div class="help" style="margin:0 0 10px">Check your school calendar. We'll remind you to update your courses and grades when each term ends, so your GPA and recommendations stay accurate.</div>
+      <div class="fgrid" id="td-fields"></div>
+      <div class="mfoot">
+        <button class="btn" onclick="submitTermDates()">Save</button>
+        <span class="lands" id="td-err" style="color:var(--alert)"></span>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="ovl" id="aovl" onclick="if(event.target===this)closeAppleConnect()">
   <div class="modal" style="max-width:440px">
     <div class="mhd">
@@ -1637,27 +1661,105 @@ const TERM_ANCHORS = {
               {m:5,  d:10, label:'third trimester'}]
 };
 
+/* The student's own term-end dates for the current school year, keyed by
+   term index (0-based, same order as TERM_ANCHORS[termSystem]) -> 'YYYY-MM-DD'.
+   Empty until they've entered them; any term without one falls back to the
+   generic anchor above. Stored server-side in student_term_dates. */
+let termDates = {};
+let termDatesLoaded = false;
+function fmtLongDay(d){ return d.toLocaleDateString('en-US',{month:'long', day:'numeric'}); }
+
 function checkStaleGrades(){
   const anchors = TERM_ANCHORS[STUDENT.termSystem] || [];
   const updated = new Date(STUDENT.gradesLastUpdated + 'T00:00');
   let passed = null;
-  anchors.forEach(a=>{
-    // the most recent occurrence of this anchor at or before today
-    let when = new Date(NOW.getFullYear(), a.m, a.d);
-    if (when > NOW) when = new Date(NOW.getFullYear()-1, a.m, a.d);
-    if (when > updated && (!passed || when > passed.when)) passed = {when, label:a.label};
+  anchors.forEach((a, i)=>{
+    const saved = termDates[i];
+    let when, exact = false;
+    if (saved){
+      when = new Date(saved + 'T00:00'); exact = true;
+      if (when > NOW) return;                       // this term hasn't ended yet
+    } else {
+      // the most recent occurrence of this anchor at or before today
+      when = new Date(NOW.getFullYear(), a.m, a.d);
+      if (when > NOW) when = new Date(NOW.getFullYear()-1, a.m, a.d);
+    }
+    if (when > updated && (!passed || when > passed.when)) passed = {when, label:a.label, exact};
   });
   document.getElementById('gpa-updated').textContent =
     'Last updated ' + updated.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   if (passed){
     document.getElementById('stale').style.display = 'flex';
     document.getElementById('stale-txt').innerHTML =
-      'Your <b>' + passed.label + '</b> ended around ' +
-      passed.when.toLocaleDateString('en-US',{month:'long',day:'numeric'}) +
-      ', and your courses and grades haven\'t been updated since then, so your GPA may be out of date.';
+      'Your <b>' + passed.label + '</b> ended ' + (passed.exact ? 'on ' : 'around ') +
+      fmtLongDay(passed.when) +
+      ', and your courses and grades haven\'t been updated since then. Update them so your GPA and recommendations stay accurate.';
+  } else {
+    document.getElementById('stale').style.display = 'none';
   }
+  renderTermDatesBar();
 }
 checkStaleGrades();
+
+/* ---- Term-end dates: prompt to add them, summary + edit once saved ---- */
+function termLabels(){ return (TERM_ANCHORS[STUDENT.termSystem] || []).map(a=>a.label); }
+function renderTermDatesBar(){
+  const bar = document.getElementById('termdates-bar'); if (!bar || !termDatesLoaded) return;
+  const labels = termLabels();
+  if (!labels.length){ bar.style.display = 'none'; return; }
+  const entered = labels.map((l,i)=>[l, termDates[i]]).filter(x=>x[1]);
+  bar.style.display = 'flex';
+  const txt = document.getElementById('termdates-txt');
+  const btn = document.getElementById('termdates-btn');
+  if (!entered.length){
+    txt.textContent = 'Add when your ' + (labels.length > 1 ? labels.length + ' terms end' : 'school year ends') +
+      ' and we\'ll remind you to update your grades.';
+    btn.textContent = 'Add term dates';
+  } else {
+    txt.innerHTML = entered.map(([l,d])=>'<b>' + escHtml(l) + '</b> ends ' + fmtLongDay(new Date(d + 'T00:00'))).join(' &middot; ');
+    btn.textContent = 'Edit';
+  }
+}
+async function loadTermDates(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/term-dates`); }
+  catch (e) { return; }
+  termDates = {};
+  data.terms.forEach(t=>{ termDates[t.term_index] = t.end_date; });
+  termDatesLoaded = true;
+  checkStaleGrades();
+}
+function openTermDates(){
+  const labels = termLabels();
+  document.getElementById('td-fields').innerHTML = labels.map((l,i)=>
+    '<div class="f wide"><label>End of ' + escHtml(l) + '</label><input type="date" id="td-' + i + '" value="' + (termDates[i] || '') + '"></div>'
+  ).join('');
+  document.getElementById('td-err').textContent = '';
+  document.getElementById('tdovl').classList.add('open');
+}
+function closeTermDates(){ document.getElementById('tdovl').classList.remove('open'); }
+async function submitTermDates(){
+  const err = document.getElementById('td-err');
+  const terms = [];
+  termLabels().forEach((l,i)=>{
+    const v = document.getElementById('td-' + i).value;
+    if (v) terms.push({term_index:i, end_date:v});
+  });
+  if (!terms.length){ err.textContent = 'Enter at least one date.'; return; }
+  for (let i = 1; i < terms.length; i++){
+    if (terms[i].end_date <= terms[i-1].end_date){ err.textContent = 'Each term should end after the one before it.'; return; }
+  }
+  err.textContent = 'Saving...';
+  try {
+    await apiFetch(`/students/${STUDENT_ID}/term-dates`, {
+      method:'PUT', body: JSON.stringify({term_system: STUDENT.termSystem, terms}),
+    });
+  } catch (e) { err.textContent = 'Could not save, try again.'; return; }
+  closeTermDates();
+  toast('Term dates saved');
+  await loadTermDates();
+}
+loadTermDates();
 
 /* ---------- 2. Road to CAM ----------
    Deterministic. Computed from profile completeness, NOT from AI.      */
@@ -1849,9 +1951,9 @@ loadStreak();
 pollEvery(loadStreak);
 
 /* ---------- 3. Calendar ---------- */
-/* Google and Apple are both real, independent connections -- either, both,
-   or neither can be active at once. Outlook has no real provider wired, so
-   it stays a cosmetic toggle. calConnected is derived from all three and
+/* Google, Apple, and Outlook are all real, independent connections -- either, both,
+   or neither can be active at once, and so is Outlook (Microsoft Graph via
+   outlook_calendar.py). calConnected is derived from all three and
    drives the generic "synced to your calendar" copy used elsewhere (task
    chips, toasts) that doesn't need to know which provider(s) are active. */
 let googleConnected = false;
@@ -1863,8 +1965,11 @@ function refreshCalConnectedFlag(){ calConnected = googleConnected || appleConne
 async function connectCal(which){
   if (which === 'Apple'){ openAppleConnect(); return; }
   if (which === 'Outlook'){
-    outlookConnected = true; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
-    toast('Outlook calendar connected');
+    let odata;
+    try { odata = await apiFetch(`/students/${STUDENT_ID}/outlook-calendar/connect`); }
+    catch (e) { toast('Could not start Outlook sign-in, try again'); return; }
+    const opopup = window.open(odata.authorize_url, 'gradmap-outlook-calendar', 'width=480,height=680');
+    if (!opopup) toast('Please allow popups to connect Outlook Calendar');
     return;
   }
   let data;
@@ -1895,9 +2000,27 @@ async function checkGoogleCalendarStatus(){
   catch (e) { /* leave as-is if the check itself fails */ }
   refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
 }
-function disconnectOutlookCalendar(){
+window.addEventListener('message', async (event) => {
+  if (!event.data || event.data.source !== 'gradmap-outlook-calendar') return;
+  if (event.data.status === 'success'){
+    outlookConnected = true; refreshCalConnectedFlag();
+    refreshCalendarConnectUI(); renderTasks();
+    toast('Outlook Calendar connected');
+    await syncCalendar();
+  } else {
+    toast('Could not connect Outlook Calendar, try again');
+  }
+});
+async function disconnectOutlookCalendar(){
+  try { await apiFetch(`/students/${STUDENT_ID}/outlook-calendar/disconnect`, {method:'POST'}); }
+  catch (e) { toast('Could not disconnect, try again'); return; }
   outlookConnected = false; refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
-  toast('Outlook calendar disconnected');
+  toast('Outlook Calendar disconnected');
+}
+async function checkOutlookCalendarStatus(){
+  try { outlookConnected = (await apiFetch(`/students/${STUDENT_ID}/outlook-calendar/status`)).connected; }
+  catch (e) { /* leave as-is if the check itself fails */ }
+  refreshCalConnectedFlag(); refreshCalendarConnectUI(); renderTasks();
 }
 
 /* ---- Apple: no OAuth popup -- a credential form (see #aovl) that submits
@@ -1992,10 +2115,15 @@ async function syncCalendar(){
     apiFetch(`/students/${STUDENT_ID}/apple-calendar/sync`, {method:'POST', body: JSON.stringify({items})})
       .catch(()=>toast('Could not sync to Apple Calendar'))
   );
+  if (outlookConnected) jobs.push(
+    apiFetch(`/students/${STUDENT_ID}/outlook-calendar/sync`, {method:'POST', body: JSON.stringify({items})})
+      .catch(()=>toast('Could not sync to Outlook Calendar'))
+  );
   if (jobs.length) await Promise.all(jobs);
 }
 checkGoogleCalendarStatus();
 checkAppleCalendarStatus();
+checkOutlookCalendarStatus();
 loadOwnEvents();
 loadGlobalEvents();
 

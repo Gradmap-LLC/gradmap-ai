@@ -37,6 +37,18 @@ from google_calendar import (
     pop_pending_flow,
     sync_events as sync_google_calendar_events,
 )
+from outlook_calendar import (
+    OutlookNotConfiguredError,
+    OutlookNotConnectedError,
+    build_authorize_url as build_outlook_authorize_url,
+    complete_connection as complete_outlook_connection,
+    create_pending_flow as create_outlook_pending_flow,
+    disconnect as disconnect_outlook_calendar,
+    is_connected as is_outlook_calendar_connected,
+    pop_pending_flow as pop_outlook_pending_flow,
+    sync_events as sync_outlook_calendar_events,
+)
+from term_dates import list_term_dates, save_term_dates
 from own_events import (
     add_own_event,
     delete_own_event,
@@ -1542,11 +1554,15 @@ def _average(total, count):
 def _compute_gpa_summary(student_id):
     rows = _fetch_gpa_forecast_detail_rows(student_id)
 
+    # Only gpa_forecast.updated_at counts: gpa_forecast_detail.updated_at gets
+    # bumped for every row of every student by a batch job (all rows of one
+    # student share a single timestamp from the same morning), so using it
+    # made "last updated" always read as "today" regardless of real edits.
     last_updated = None
     for row in rows:
-        for candidate in (row["forecast_updated_at"], row["detail_updated_at"]):
-            if candidate and (last_updated is None or candidate > last_updated):
-                last_updated = candidate
+        candidate = row["forecast_updated_at"]
+        if candidate and (last_updated is None or candidate > last_updated):
+            last_updated = candidate
 
     graded = [r for r in rows if r["grade"]]
 
@@ -2402,6 +2418,112 @@ def apple_calendar_sync(student_id: str, body: AppleCalendarSyncRequest):
     except AppleCalendarAuthError as error:
         raise HTTPException(status_code=401, detail=str(error))
     return {"synced": len(body.items)}
+
+
+# --- Outlook / Microsoft 365 Calendar via Microsoft Graph --------------------
+# Same popup + postMessage flow as Google. See outlook_calendar.py.
+
+_OUTLOOK_CALLBACK_HTML = """<!doctype html>
+<html><body style="font-family:system-ui;text-align:center;padding:40px">
+<p>{message}</p>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage({{ source: 'gradmap-outlook-calendar', status: '{status}' }}, '*');
+    window.close();
+  }}
+</script>
+</body></html>"""
+
+
+def _outlook_callback_page(status: str, message: str) -> HTMLResponse:
+    return HTMLResponse(_OUTLOOK_CALLBACK_HTML.format(status=status, message=html.escape(message)))
+
+
+@app.get("/students/{student_id}/outlook-calendar/connect")
+def outlook_calendar_connect(student_id: str):
+    try:
+        flow_id = create_outlook_pending_flow(student_id)
+        return {"authorize_url": build_outlook_authorize_url(flow_id)}
+    except OutlookNotConfiguredError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+
+@app.get("/outlook-calendar/oauth-callback")
+def outlook_calendar_oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    """Fixed, pre-registered redirect URI, so `state` (the flow_id from
+    /connect) is what recovers which student this is for."""
+    if error or not code or not state:
+        return _outlook_callback_page("error", error or "Microsoft did not return an authorization code.")
+
+    student_id = pop_outlook_pending_flow(state)
+    if student_id is None:
+        return _outlook_callback_page("error", "This connection link expired. Please try connecting again.")
+
+    try:
+        complete_outlook_connection(student_id, code)
+    except Exception:
+        return _outlook_callback_page("error", "Could not connect Outlook Calendar. Please try again.")
+
+    return _outlook_callback_page("success", "Outlook Calendar connected. You can close this tab.")
+
+
+@app.get("/students/{student_id}/outlook-calendar/status")
+def outlook_calendar_status(student_id: str):
+    return {"connected": is_outlook_calendar_connected(student_id)}
+
+
+@app.post("/students/{student_id}/outlook-calendar/disconnect")
+def outlook_calendar_disconnect(student_id: str):
+    disconnect_outlook_calendar(student_id)
+    return {"connected": False}
+
+
+class OutlookCalendarSyncItem(BaseModel):
+    source_type: Literal["hard_deadline", "target_date", "own_event"]
+    source_id: str
+    title: str
+    date: str  # YYYY-MM-DD
+    description: str | None = None
+
+
+class OutlookCalendarSyncRequest(BaseModel):
+    items: list[OutlookCalendarSyncItem]
+
+
+@app.post("/students/{student_id}/outlook-calendar/sync")
+def outlook_calendar_sync(student_id: str, body: OutlookCalendarSyncRequest):
+    """Same full-reconciliation contract as /google-calendar/sync."""
+    try:
+        sync_outlook_calendar_events(student_id, [item.model_dump() for item in body.items])
+    except OutlookNotConnectedError:
+        raise HTTPException(status_code=409, detail="Outlook Calendar is not connected for this student")
+    return {"synced": len(body.items)}
+
+
+# --- Term-end dates (drive the "update your grades" reminder) ---------------
+# The student enters when each of their semesters/quarters ends; see term_dates.py.
+
+class TermDate(BaseModel):
+    term_index: int
+    end_date: str  # 'YYYY-MM-DD'
+
+
+class SaveTermDatesRequest(BaseModel):
+    term_system: Literal["full_year", "semester", "trimester", "quarter"]
+    terms: list[TermDate]
+
+
+@app.get("/students/{student_id}/term-dates")
+def get_term_dates(student_id: str):
+    return list_term_dates(student_id)
+
+
+@app.put("/students/{student_id}/term-dates")
+def put_term_dates(student_id: str, body: SaveTermDatesRequest):
+    try:
+        return save_term_dates(student_id, body.term_system, [t.model_dump() for t in body.terms])
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 # --- Student's own calendar events (campus visits, test days, etc.) --------
