@@ -1035,8 +1035,8 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
             <div class="s">
               <div class="k">GPA</div>
               <div class="v" id="gpa-v">
-                <div>X.XX <small>W</small> &nbsp; X.XX <small>UW</small></div>
-                <div>X.XX <small>CAPPED</small> &nbsp; X.XX <small>UNCAPPED</small></div>
+                <div>&hellip; <small>W</small> &nbsp; &hellip; <small>UW</small></div>
+                <div>&hellip; <small>CAPPED</small> &nbsp; &hellip; <small>UNCAPPED</small></div>
               </div>
               <div class="m" id="gpa-updated">Last updated ·</div>
             </div>
@@ -1555,8 +1555,8 @@ let calCursor = new Date(NOW.getFullYear(), NOW.getMonth(), 1);
 const STUDENT_ID = 13;
 
 const STUDENT = {
-  termSystem: 'semester',              // full_year | semester | quarter | trimester -- real value arrives via loadClassYear()
-  gradesLastUpdated: '2026-05-28',     // placeholder until loadGpa() resolves with the real gpa_forecast/gpa_forecast_detail date
+  termSystem: null,                    // full_year | semester | quarter | trimester -- null until loadClassYear() (or its cache) resolves
+  gradesLastUpdated: null,             // 'YYYY-MM-DD', null until loadGpa() (or its cache) resolves with the real gpa_forecast date
   grade: null,                          // 1-12, or null while loading/unknown -- real value arrives via loadClassYear()
 };
 /* Class year, grade, season and term system are all computed server-side
@@ -1667,10 +1667,23 @@ const TERM_ANCHORS = {
    Empty until they've entered them; any term without one falls back to the
    generic anchor above. Stored server-side in student_term_dates. */
 let termDates = {};
-let termDatesLoaded = false;
+let termDatesLoaded = false;    // the term-dates request succeeded (drives the "Add term dates" row)
+let termDatesSettled = false;   // it succeeded OR failed -- either way we know what to use
 function fmtLongDay(d){ return d.toLocaleDateString('en-US',{month:'long', day:'numeric'}); }
 
 function checkStaleGrades(){
+  // Don't judge staleness from placeholders: until the term system, the real
+  // last-updated date and the student's term dates have all arrived (live or
+  // from cache), show nothing rather than a banner that then vanishes/changes.
+  if (STUDENT.gradesLastUpdated){
+    document.getElementById('gpa-updated').textContent = 'Last updated ' +
+      new Date(STUDENT.gradesLastUpdated + 'T00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  }
+  if (!STUDENT.termSystem || !STUDENT.gradesLastUpdated || !termDatesSettled){
+    document.getElementById('stale').style.display = 'none';
+    renderTermDatesBar();
+    return;
+  }
   const anchors = TERM_ANCHORS[STUDENT.termSystem] || [];
   const updated = new Date(STUDENT.gradesLastUpdated + 'T00:00');
   let passed = null;
@@ -1721,14 +1734,19 @@ function renderTermDatesBar(){
     btn.textContent = 'Edit';
   }
 }
-async function loadTermDates(){
-  let data;
-  try { data = await apiFetch(`/students/${STUDENT_ID}/term-dates`); }
-  catch (e) { return; }
+function applyTermDates(data){
   termDates = {};
   data.terms.forEach(t=>{ termDates[t.term_index] = t.end_date; });
   termDatesLoaded = true;
+  termDatesSettled = true;
   checkStaleGrades();
+}
+async function loadTermDates(){
+  let data;
+  try { data = await apiFetch(`/students/${STUDENT_ID}/term-dates`); }
+  catch (e) { termDatesSettled = true; checkStaleGrades(); return; }   // offline: fall back to the generic anchors
+  applyTermDates(data);
+  cacheSet('term-dates', data);
 }
 function openTermDates(){
   const labels = termLabels();
@@ -3704,6 +3722,8 @@ function renderGrowth(){ renderMomentum(); renderNudges(); renderOneline(); rend
    it all still runs in the same synchronous pass before the first frame. */
 [
   ['class-year', applyClassYear],
+  ['gpa', applyGpa],
+  ['term-dates', applyTermDates],
   ['majors-of-interest', applyMajorsOfInterest],
   ['school-characteristics', applySchoolCharacteristics],
   ['readiness', applyReadiness],
