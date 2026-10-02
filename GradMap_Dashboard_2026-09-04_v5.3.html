@@ -311,7 +311,7 @@ h1{font-size:24px;margin:0 0 3px}
 .ring{width:76px;height:76px;flex:none}
 .ring .bgc{stroke:var(--track)}
 .ring .fgc{stroke:var(--accent-mid);stroke-linecap:round;transition:stroke-dasharray .5s}
-.ring text{font-size:15px;font-weight:800;fill:var(--ink)}
+.ring text{font-size:10px;font-weight:800;fill:var(--ink);dominant-baseline:central}
 .roadtxt{flex:1;min-width:220px}
 .roadtxt #road-head{font-size:15px;font-weight:800;display:block;margin-bottom:3px}
 .roadtxt div{color:var(--muted);font-size:12.5px}
@@ -1116,7 +1116,7 @@ select.status{border:1px solid var(--line);border-radius:var(--r-ctl);padding:5p
                 <circle class="bgc" cx="21" cy="21" r="17" fill="none" stroke-width="5"/>
                 <circle class="fgc" id="ringfg" cx="21" cy="21" r="17" fill="none" stroke-width="5"
                         transform="rotate(-90 21 21)" stroke-dasharray="0 107"/>
-                <text x="21" y="24" text-anchor="middle" id="ringtxt">0%</text>
+                <text x="21" y="21.5" text-anchor="middle" id="ringtxt">0%</text>
               </svg>
             </div>
             <div class="roadtxt">
